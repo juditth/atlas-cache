@@ -1,0 +1,146 @@
+.atlas-cache {
+    max-width: 1180px;
+}
+
+.atlas-cache-header {
+    margin: 18px 0 16px;
+}
+
+.atlas-cache-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.atlas-cache-card,
+.atlas-cache-panel,
+.atlas-cache-tool {
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.atlas-cache-card {
+    padding: 18px 20px;
+}
+
+.atlas-cache-card h2,
+.atlas-cache-tool h2 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.atlas-cache-card p {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.35;
+}
+
+.atlas-cache-panel,
+.atlas-cache-form {
+    padding: 20px 22px;
+    margin-top: 16px;
+}
+
+.atlas-cache-field {
+    padding: 16px 0;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.atlas-cache-field:first-of-type {
+    padding-top: 0;
+}
+
+.atlas-cache-field:last-of-type {
+    border-bottom: 0;
+}
+
+.atlas-cache-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.atlas-cache-field .description,
+.atlas-cache-info {
+    max-width: 760px;
+    color: #646970;
+}
+
+.atlas-cache-info {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    background: #f6f7f7;
+    border-left: 4px solid #72aee6;
+}
+
+.atlas-cache-tools {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.atlas-cache-tool {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 18px 20px;
+}
+
+.atlas-cache-tool p {
+    max-width: 760px;
+    margin: 0;
+    color: #646970;
+}
+
+.atlas-cache-log-select {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.atlas-cache-log-output {
+    max-height: 560px;
+    overflow: auto;
+    padding: 14px;
+    margin: 0;
+    background: #101517;
+    color: #f0f6fc;
+    border-radius: 6px;
+    white-space: pre-wrap;
+}
+
+.atlas-cache-badge {
+    display: inline-block;
+    min-width: 58px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.atlas-cache-badge-revalidate,
+.atlas-cache-badge-refresh {
+    background: #e7f5ff;
+    color: #0a4b78;
+}
+
+.atlas-cache-badge-purge {
+    background: #fcf0f1;
+    color: #8a2424;
+}
+
+@media (max-width: 782px) {
+    .atlas-cache-tool,
+    .atlas-cache-log-select {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
