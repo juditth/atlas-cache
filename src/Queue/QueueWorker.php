@@ -87,7 +87,7 @@ final class QueueWorker
             $cacheStatus = (string) wp_remote_retrieve_header($response, 'x-atlas-cache');
             $cacheReason = (string) wp_remote_retrieve_header($response, 'x-atlas-cache-reason');
 
-            if ($code >= 200 && $code < 300 && strtoupper($cacheStatus) === 'MISS' && $cacheReason === 'Stored') {
+            if ($code >= 200 && $code < 300 && strtoupper($cacheStatus) === 'MISS' && ($cacheReason === '' || $cacheReason === 'Stored')) {
                 $this->queue->markDone($id);
                 $this->logger->log('revalidate', 'DONE ' . $url);
                 $done++;
