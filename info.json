@@ -1,7 +1,7 @@
 {
-  "version": "0.1.1",
-  "download_url": "https://vyladeny-web.cz/plugins/atlas-cache/atlas-cache-0.1.1.zip",
-  "sha256": "replace-with-package-sha256",
+  "version": "0.1.0",
+  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.0.zip",
+  "sha256": "43831dbb3687df8b5d1cd00bcd902c215acd977ae4cfa5734ff1b226ef0edbd4",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
@@ -10,6 +10,6 @@
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "Maintenance release."
+    "changelog": "Initial release."
   }
 }

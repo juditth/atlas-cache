@@ -32,6 +32,7 @@ final class SelfHostedUpdater
         add_filter('pre_set_site_transient_update_plugins', [$this, 'checkForUpdate']);
         add_filter('plugins_api', [$this, 'pluginInformation'], 10, 3);
         add_filter('upgrader_pre_download', [$this, 'verifyPackageDownload'], 10, 4);
+        add_filter('upgrader_source_selection', [$this, 'normalizePackageSource'], 10, 4);
     }
 
     /**
@@ -111,6 +112,49 @@ final class SelfHostedUpdater
         }
 
         return $file;
+    }
+
+    /**
+     * @param mixed $source
+     * @param mixed $upgrader
+     * @param mixed $hookExtra
+     * @return mixed
+     */
+    public function normalizePackageSource($source, string $remoteSource, $upgrader, $hookExtra)
+    {
+        if (is_wp_error($source) || !is_array($hookExtra) || ($hookExtra['plugin'] ?? '') !== $this->pluginBasename) {
+            return $source;
+        }
+
+        if (!is_string($source) || $source === '') {
+            return $source;
+        }
+
+        $source = untrailingslashit($source);
+        if (basename($source) === $this->slug) {
+            return trailingslashit($source);
+        }
+
+        global $wp_filesystem;
+        if (!is_object($wp_filesystem) || !method_exists($wp_filesystem, 'exists') || !method_exists($wp_filesystem, 'move')) {
+            return $source;
+        }
+
+        $mainFile = trailingslashit($source) . basename($this->pluginBasename);
+        if (!$wp_filesystem->exists($mainFile)) {
+            return $source;
+        }
+
+        $target = trailingslashit($remoteSource) . $this->slug;
+        if ($wp_filesystem->exists($target)) {
+            return new WP_Error('atlas_cache_update_target_exists', 'Atlas Cache update package could not be normalized because the target directory already exists.');
+        }
+
+        if (!$wp_filesystem->move($source, $target)) {
+            return new WP_Error('atlas_cache_update_rename_failed', 'Atlas Cache update package could not be renamed to the expected plugin directory.');
+        }
+
+        return trailingslashit($target);
     }
 
     /**
