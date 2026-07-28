@@ -54,8 +54,6 @@ final class Plugin
         add_action('admin_init', [$this->adminMenu, 'handleActions']);
         add_action('admin_bar_menu', [$this->adminMenu, 'registerAdminBar'], 90);
         add_action('admin_post_atlas_cache_toolbar', [$this->adminMenu, 'handleToolbarAction']);
-        add_action('admin_post_atlas_cache_check_updates', [$this, 'checkUpdatesNow']);
-        add_action('admin_notices', [$this, 'updateCheckNotice']);
         add_filter('plugin_action_links_' . plugin_basename(ATLAS_CACHE_FILE), [$this, 'pluginActionLinks']);
         add_action('atlas_cache_process_queue', [$this, 'processQueue']);
         add_action('atlas_cache_cleanup_logs', [$this, 'cleanupLogs']);
@@ -105,41 +103,11 @@ final class Plugin
      */
     public function pluginActionLinks(array $links): array
     {
-        $checkUrl = wp_nonce_url(
-            admin_url('admin-post.php?action=atlas_cache_check_updates'),
-            'atlas_cache_check_updates'
-        );
-
         array_unshift(
             $links,
-            '<a href="' . esc_url($checkUrl) . '">' . esc_html__('Check for updates', 'atlas-cache') . '</a>',
             '<a href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">' . esc_html__('Settings', 'atlas-cache') . '</a>'
         );
 
         return $links;
-    }
-
-    public function checkUpdatesNow(): void
-    {
-        if (!current_user_can('update_plugins')) {
-            wp_die(esc_html__('You do not have permission to check plugin updates.', 'atlas-cache'));
-        }
-
-        check_admin_referer('atlas_cache_check_updates');
-
-        $this->updater->clearUpdateCache();
-        wp_update_plugins();
-
-        wp_safe_redirect(add_query_arg('atlas-cache-update-check', '1', admin_url('plugins.php')));
-        exit;
-    }
-
-    public function updateCheckNotice(): void
-    {
-        if (!isset($_GET['atlas-cache-update-check']) || !current_user_can('update_plugins')) {
-            return;
-        }
-
-        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Atlas Cache update check completed. If no update is shown, the installed version is already current or the manifest does not contain a newer version.', 'atlas-cache') . '</p></div>';
     }
 }
