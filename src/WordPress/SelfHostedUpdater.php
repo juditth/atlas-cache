@@ -33,6 +33,12 @@ final class SelfHostedUpdater
         add_filter('upgrader_source_selection', [$this, 'normalizePackageSource'], 10, 4);
     }
 
+    public function clearUpdateCache(): void
+    {
+        delete_site_transient(self::CACHE_KEY);
+        delete_site_transient('update_plugins');
+    }
+
     /**
      * @param mixed $transient
      * @return mixed
