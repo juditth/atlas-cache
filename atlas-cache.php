@@ -22,7 +22,7 @@ define('ATLAS_CACHE_DIR', plugin_dir_path(__FILE__));
 define('ATLAS_CACHE_URL', plugin_dir_url(__FILE__));
 
 if (!defined('ATLAS_CACHE_UPDATE_INFO_URL')) {
-    define('ATLAS_CACHE_UPDATE_INFO_URL', '');
+    define('ATLAS_CACHE_UPDATE_INFO_URL', 'https://vyladeny-web.cz/plugins/atlas-cache/info.json');
 }
 
 require_once ATLAS_CACHE_DIR . 'src/Support/Autoloader.php';

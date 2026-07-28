@@ -1,8 +1,8 @@
 {
   "version": "0.1.1",
-  "download_url": "https://example.com/downloads/atlas-cache-0.1.1.zip",
+  "download_url": "https://vyladeny-web.cz/plugins/atlas-cache/atlas-cache-0.1.1.zip",
   "sha256": "replace-with-package-sha256",
-  "homepage": "https://example.com/atlas-cache/",
+  "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
   "requires_php": "8.0",
