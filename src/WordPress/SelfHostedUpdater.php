@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AtlasCache\WordPress;
 
 use stdClass;
-use WP_Error;
 
 final class SelfHostedUpdater
 {
@@ -31,7 +30,6 @@ final class SelfHostedUpdater
     {
         add_filter('pre_set_site_transient_update_plugins', [$this, 'checkForUpdate']);
         add_filter('plugins_api', [$this, 'pluginInformation'], 10, 3);
-        add_filter('upgrader_pre_download', [$this, 'verifyPackageDownload'], 10, 4);
         add_filter('upgrader_source_selection', [$this, 'normalizePackageSource'], 10, 4);
     }
 
@@ -76,42 +74,6 @@ final class SelfHostedUpdater
         }
 
         return $this->informationObject($info);
-    }
-
-    /**
-     * @param mixed $reply
-     * @param mixed $upgrader
-     * @param mixed $hookExtra
-     * @return mixed
-     */
-    public function verifyPackageDownload($reply, string $package, $upgrader, $hookExtra)
-    {
-        if ($reply !== false || $package === '') {
-            return $reply;
-        }
-
-        $info = $this->remoteInfo();
-        if ($info === null || (string) $info['download_url'] !== $package || empty($info['sha256'])) {
-            return false;
-        }
-
-        if (!function_exists('download_url')) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-        }
-
-        $file = download_url($package);
-        if (is_wp_error($file)) {
-            return $file;
-        }
-
-        $expected = strtolower((string) $info['sha256']);
-        $actual = strtolower((string) hash_file('sha256', (string) $file));
-        if (!hash_equals($expected, $actual)) {
-            wp_delete_file((string) $file);
-            return new WP_Error('atlas_cache_bad_package_hash', 'Atlas Cache update package hash verification failed.');
-        }
-
-        return $file;
     }
 
     /**
@@ -236,7 +198,6 @@ final class SelfHostedUpdater
                 'description' => $this->stringOrDefault($sections['description'] ?? '', 'Simple and safe HTML page cache.'),
                 'changelog' => $this->stringOrDefault($sections['changelog'] ?? '', ''),
             ],
-            'sha256' => isset($data['sha256']) ? strtolower(trim((string) $data['sha256'])) : '',
         ];
     }
 

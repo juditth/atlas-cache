@@ -54,6 +54,7 @@ final class Plugin
         add_action('admin_init', [$this->adminMenu, 'handleActions']);
         add_action('admin_bar_menu', [$this->adminMenu, 'registerAdminBar'], 90);
         add_action('admin_post_atlas_cache_toolbar', [$this->adminMenu, 'handleToolbarAction']);
+        add_filter('plugin_action_links_' . plugin_basename(ATLAS_CACHE_FILE), [$this, 'pluginActionLinks']);
         add_action('atlas_cache_process_queue', [$this, 'processQueue']);
         add_action('atlas_cache_cleanup_logs', [$this, 'cleanupLogs']);
         $this->contentChangeSubscriber->register();
@@ -94,5 +95,19 @@ final class Plugin
     {
         $settings = $this->settings->all();
         $this->logger->cleanup((int) $settings['debug_log_retention_days']);
+    }
+
+    /**
+     * @param list<string> $links
+     * @return list<string>
+     */
+    public function pluginActionLinks(array $links): array
+    {
+        array_unshift(
+            $links,
+            '<a href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">' . esc_html__('Settings', 'atlas-cache') . '</a>'
+        );
+
+        return $links;
     }
 }

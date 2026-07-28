@@ -1,7 +1,6 @@
 {
   "version": "0.1.0",
   "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.0.zip",
-  "sha256": "43831dbb3687df8b5d1cd00bcd902c215acd977ae4cfa5734ff1b226ef0edbd4",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
