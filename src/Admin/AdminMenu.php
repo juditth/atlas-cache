@@ -724,6 +724,12 @@ final class AdminMenu
     {
         $rows = $this->queue->latest(20);
         if ($rows === []) {
+            $databaseError = $this->queue->lastDatabaseError();
+            if ($databaseError !== '') {
+                echo '<div class="notice notice-error"><p>Queue table could not be read: ' . esc_html($databaseError) . '</p></div>';
+                return;
+            }
+
             echo '<p>The queue is empty.</p>';
             return;
         }

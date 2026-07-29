@@ -50,7 +50,7 @@ final class PluginFactory
         $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger);
         $updater = new SelfHostedUpdater(ATLAS_CACHE_FILE, ATLAS_CACHE_VERSION, (string) ATLAS_CACHE_UPDATE_INFO_URL);
 
-        return new Plugin($settings, $middleware, $adminMenu, $runtimeConfigWriter, $logger, $worker, $contentChangeSubscriber, $updater);
+        return new Plugin($settings, $middleware, $adminMenu, $runtimeConfigWriter, $logger, $queue, $worker, $contentChangeSubscriber, $updater);
     }
 
     public static function paths(): CachePaths

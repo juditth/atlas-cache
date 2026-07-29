@@ -1,7 +1,7 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.5",
-  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.5.zip",
+  "version": "0.1.6",
+  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.6.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
@@ -10,6 +10,6 @@
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "0.1.5: Rename the immediate file deletion tool to Clear cache files and highlight the Enable cache switch."
+    "changelog": "0.1.6: Run queue table migrations after plugin updates and make store log entries easier to read."
   }
 }

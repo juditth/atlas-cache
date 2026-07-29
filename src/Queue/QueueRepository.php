@@ -248,6 +248,11 @@ final class QueueRepository
         return is_array($rows) ? $rows : [];
     }
 
+    public function lastDatabaseError(): string
+    {
+        return (string) $this->wpdb->last_error;
+    }
+
     public function markDone(int $id): void
     {
         $this->wpdb->update(

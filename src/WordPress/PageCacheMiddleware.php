@@ -105,8 +105,9 @@ final class PageCacheMiddleware
             $key = $this->cacheKeyGenerator->generate($host, $path, $language, 'public');
             $now = $this->clock->now();
 
+            $url = home_url($path);
             $metadata = [
-                'url' => home_url($path),
+                'url' => $url,
                 'host' => $host,
                 'path' => $path,
                 'language' => $language,
@@ -121,7 +122,7 @@ final class PageCacheMiddleware
 
             $this->storage->write($key, $html, $metadata);
             $this->debugHeader('MISS', 'Stored');
-            $this->maybeLog('store', $key->debugKey(), $settings);
+            $this->maybeLog('store', 'url=' . $url . ' key=' . $key->debugKey(), $settings);
 
             if ($this->frontendDebugActive($settings)) {
                 $html .= "\n<!-- Atlas Cache: MISS; stored=" . esc_html(gmdate('c', $now)) . '; key=' . esc_html($key->debugKey()) . " -->";

@@ -42,6 +42,7 @@ final class Activator
             $runtimeConfigWriter->write();
             $dropInInstaller->install();
             self::scheduleCleanup();
+            update_option('atlas_cache_installed_version', ATLAS_CACHE_VERSION, false);
             update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => ''], false);
         } catch (RuntimeException $exception) {
             update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => $exception->getMessage()], false);

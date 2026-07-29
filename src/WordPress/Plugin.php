@@ -8,15 +8,19 @@ use AtlasCache\Admin\AdminMenu;
 use AtlasCache\Config\RuntimeConfigWriter;
 use AtlasCache\Config\SettingsRepository;
 use AtlasCache\Debug\Logger;
+use AtlasCache\Queue\QueueRepository;
 use AtlasCache\Queue\QueueWorker;
 
 final class Plugin
 {
+    private const INSTALLED_VERSION_OPTION = 'atlas_cache_installed_version';
+
     private SettingsRepository $settings;
     private PageCacheMiddleware $middleware;
     private AdminMenu $adminMenu;
     private RuntimeConfigWriter $runtimeConfigWriter;
     private Logger $logger;
+    private QueueRepository $queue;
     private QueueWorker $worker;
     private ContentChangeSubscriber $contentChangeSubscriber;
     private SelfHostedUpdater $updater;
@@ -27,6 +31,7 @@ final class Plugin
         AdminMenu $adminMenu,
         RuntimeConfigWriter $runtimeConfigWriter,
         Logger $logger,
+        QueueRepository $queue,
         QueueWorker $worker,
         ContentChangeSubscriber $contentChangeSubscriber,
         SelfHostedUpdater $updater
@@ -36,6 +41,7 @@ final class Plugin
         $this->adminMenu = $adminMenu;
         $this->runtimeConfigWriter = $runtimeConfigWriter;
         $this->logger = $logger;
+        $this->queue = $queue;
         $this->worker = $worker;
         $this->contentChangeSubscriber = $contentChangeSubscriber;
         $this->updater = $updater;
@@ -44,6 +50,7 @@ final class Plugin
     public function register(): void
     {
         $this->settings->ensureDefaults();
+        $this->ensureInstalledVersion();
 
         add_filter('cron_schedules', [$this, 'cronSchedules']);
         add_action('init', [$this, 'ensureWorkerScheduled']);
@@ -63,6 +70,18 @@ final class Plugin
         add_action('update_option_' . SettingsRepository::OPTION_NAME, function (): void {
             $this->runtimeConfigWriter->write();
         });
+    }
+
+    private function ensureInstalledVersion(): void
+    {
+        $installedVersion = (string) get_option(self::INSTALLED_VERSION_OPTION, '');
+        if ($installedVersion === ATLAS_CACHE_VERSION) {
+            return;
+        }
+
+        $this->queue->install();
+        $this->runtimeConfigWriter->write();
+        update_option(self::INSTALLED_VERSION_OPTION, ATLAS_CACHE_VERSION, false);
     }
 
     /**
