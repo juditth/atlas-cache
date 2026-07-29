@@ -4,7 +4,7 @@ Tags: cache, page cache, html cache, performance, advanced-cache
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 0.1.9
+Stable tag: 0.1.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,14 @@ No. Common WooCommerce cart, checkout, account and session cookies are bypassed 
 No. Atlas Cache is only an HTML page cache.
 
 == Changelog ==
+
+= 0.1.10 =
+
+* Keep Enable cache off by default and queue sitemap revalidation when it is turned on.
+* Add post type warm-up priorities so important pages can be cached before lower-priority content.
+* Exclude media URLs from sitemap revalidation and fall back to published pages and posts when no sitemap is available.
+* Add .htaccess browser cache rules tools with uninstall cleanup.
+* Improve WP_CACHE enable diagnostics.
 
 = 0.1.9 =
 
