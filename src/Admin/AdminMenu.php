@@ -438,7 +438,7 @@ final class AdminMenu
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Drop-in was reinstalled and fast-cache settings file was rewritten.'], false);
             }
         } catch (RuntimeException $exception) {
-            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage(), 'last_tool_message' => 'Tool failed: ' . $exception->getMessage()], false);
         }
     }
 
@@ -619,14 +619,20 @@ final class AdminMenu
     {
         if (isset($_GET['atlas-cache-updated'])) {
             $message = 'Saved.';
+            $class = 'notice-success';
             if (isset($_GET['atlas-cache-tool'])) {
                 $diagnostics = get_option('atlas_cache_diagnostics', []);
-                if (is_array($diagnostics) && !empty($diagnostics['last_tool_message'])) {
-                    $message = (string) $diagnostics['last_tool_message'];
+                if (is_array($diagnostics)) {
+                    if (!empty($diagnostics['last_error'])) {
+                        $message = (string) $diagnostics['last_error'];
+                        $class = 'notice-error';
+                    } elseif (!empty($diagnostics['last_tool_message'])) {
+                        $message = (string) $diagnostics['last_tool_message'];
+                    }
                 }
             }
 
-            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($message) . '</p></div>';
+            echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p>' . esc_html($message) . '</p></div>';
         }
     }
 
