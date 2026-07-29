@@ -15,6 +15,8 @@ wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
 wp_clear_scheduled_hook('atlas_cache_process_queue');
 wp_clear_scheduled_hook('puc_cron_check_updates-atlas-cache');
 
+atlas_cache_uninstall_restore_wp_cache();
+
 global $wpdb;
 
 $table = $wpdb->prefix . 'atlas_cache_queue';
@@ -67,4 +69,50 @@ function atlas_cache_uninstall_remove_children(string $directory): void
             @rmdir($path);
         }
     }
+}
+
+function atlas_cache_uninstall_restore_wp_cache(): void
+{
+    $path = atlas_cache_uninstall_wp_config_path();
+    if ($path === '' || !is_writable($path)) {
+        return;
+    }
+
+    $contents = file_get_contents($path);
+    if (!is_string($contents) || strpos($contents, 'BEGIN Atlas Cache WP_CACHE') === false) {
+        return;
+    }
+
+    $pattern = '~\R?/\* BEGIN Atlas Cache WP_CACHE original=([A-Za-z0-9+/=]+|none) \*/\Rdefine\(\'WP_CACHE\', true\);\R/\* END Atlas Cache WP_CACHE \*/\R?~';
+    $contents = (string) preg_replace_callback($pattern, static function (array $matches): string {
+        $original = (string) ($matches[1] ?? 'none');
+        if ($original === 'none') {
+            return "\n";
+        }
+
+        $decoded = base64_decode($original, true);
+        if (!is_string($decoded) || $decoded === '') {
+            return "\n";
+        }
+
+        return "\n" . $decoded . "\n";
+    }, $contents);
+
+    @file_put_contents($path, $contents, LOCK_EX);
+}
+
+function atlas_cache_uninstall_wp_config_path(): string
+{
+    $candidates = [
+        ABSPATH . 'wp-config.php',
+        dirname(ABSPATH) . '/wp-config.php',
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (is_file($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return '';
 }

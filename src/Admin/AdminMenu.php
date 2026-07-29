@@ -12,6 +12,7 @@ use AtlasCache\Queue\QueueRepository;
 use AtlasCache\Queue\QueueWorker;
 use AtlasCache\Storage\CacheStorageInterface;
 use AtlasCache\WordPress\SitemapUrlCollector;
+use AtlasCache\WordPress\WpConfigEditor;
 use RuntimeException;
 
 final class AdminMenu
@@ -24,6 +25,7 @@ final class AdminMenu
     private QueueWorker $worker;
     private Logger $logger;
     private SitemapUrlCollector $sitemapUrlCollector;
+    private WpConfigEditor $wpConfigEditor;
 
     public function __construct(
         SettingsRepository $settings,
@@ -33,7 +35,8 @@ final class AdminMenu
         QueueRepository $queue,
         QueueWorker $worker,
         Logger $logger,
-        SitemapUrlCollector $sitemapUrlCollector
+        SitemapUrlCollector $sitemapUrlCollector,
+        WpConfigEditor $wpConfigEditor
     ) {
         $this->settings = $settings;
         $this->storage = $storage;
@@ -43,6 +46,7 @@ final class AdminMenu
         $this->worker = $worker;
         $this->logger = $logger;
         $this->sitemapUrlCollector = $sitemapUrlCollector;
+        $this->wpConfigEditor = $wpConfigEditor;
     }
 
     public function register(): void
@@ -289,6 +293,7 @@ final class AdminMenu
         wp_nonce_field('atlas_cache_tools');
         $this->toolButton('queue-revalidate-all', 'Revalidate cache of site', 'Queues the homepage and published public content for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
         $this->toolButton('run-worker', 'Run worker now', 'Processes pending queue items immediately, using the configured URLs-per-run limit. Revalidate jobs use an internal request.', 'secondary');
+        $this->toolButton('enable-wp-cache', 'Enable WP_CACHE', 'Writes a small Atlas Cache marker block into wp-config.php so WordPress loads advanced-cache.php before bootstrapping. Reload the admin after running it.', 'secondary');
         $this->toolButton('rewrite-config', 'Repair fast-cache settings file', 'Usually not needed. Settings are written automatically. Use this only when diagnostics reports a missing or broken advanced-cache.php config file.', 'secondary');
         $this->toolButton('install-dropin', 'Reinstall drop-in', 'Copies the Atlas Cache advanced-cache.php file into wp-content again. It will not overwrite another plugin’s drop-in unless the Atlas Cache ownership marker is present.', 'secondary');
         $this->toolButton('purge-all', 'Clear cache files', 'Immediately deletes all Atlas Cache HTML files without using the queue. If Enable cache is on, new cache files can be created again by future public visits and revalidation jobs.', 'primary', 'Clear all Atlas Cache HTML files now? New cache files can be created again if Enable cache is on.');
@@ -305,6 +310,7 @@ final class AdminMenu
         $externalCacheHeaders = $this->detectExternalCacheHeaders();
         echo '<table class="widefat striped"><tbody>';
         $this->row('WP_CACHE', (defined('WP_CACHE') && WP_CACHE) ? 'Enabled' : 'Disabled - WordPress will not load the drop-in until WP_CACHE is true.');
+        $this->row('wp-config.php', $this->wpConfigStatus());
         $this->row('advanced-cache.php', $this->dropInInstaller->exists() ? 'Exists' : 'Missing');
         $this->row('Drop-in owner', $this->dropInInstaller->isOwnedByAtlas() ? 'Atlas Cache' : 'Another plugin or unknown');
         $this->row('Cache directory', is_writable(WP_CONTENT_DIR . '/cache/atlas-cache') ? 'Writable' : 'Not writable');
@@ -411,6 +417,12 @@ final class AdminMenu
                 $message = 'Worker run completed: processed=' . $result['processed'] . ', done=' . $result['done'] . ', failed=' . $result['failed'] . '.';
                 $this->logger->log('revalidate', $message);
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_worker_run' => time(), 'last_worker_result' => $result, 'last_tool_message' => $message], false);
+                return;
+            }
+
+            if ($tool === 'enable-wp-cache') {
+                $this->wpConfigEditor->enableCache();
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'WP_CACHE was enabled in wp-config.php. Reload WordPress admin for the status card to update.'], false);
                 return;
             }
 
@@ -861,5 +873,16 @@ final class AdminMenu
     private function row(string $label, string $value): void
     {
         echo '<tr><th scope="row">' . esc_html($label) . '</th><td>' . esc_html($value) . '</td></tr>';
+    }
+
+    private function wpConfigStatus(): string
+    {
+        try {
+            $path = $this->wpConfigEditor->configPath();
+        } catch (RuntimeException $exception) {
+            return $exception->getMessage();
+        }
+
+        return is_writable($path) ? 'Writable: ' . $path : 'Not writable: ' . $path;
     }
 }

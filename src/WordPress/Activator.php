@@ -34,6 +34,7 @@ final class Activator
         $dropInInstaller = new DropInInstaller(ATLAS_CACHE_DIR . 'bin/advanced-cache.php', WP_CONTENT_DIR . '/advanced-cache.php');
         $queue = new QueueRepository($GLOBALS['wpdb']);
         $logger = new Logger($paths);
+        $wpCacheError = '';
 
         try {
             $settings->ensureDefaults();
@@ -41,9 +42,15 @@ final class Activator
             $queue->install();
             $runtimeConfigWriter->write();
             $dropInInstaller->install();
+            try {
+                (new WpConfigEditor())->enableCache();
+            } catch (RuntimeException $exception) {
+                $wpCacheError = $exception->getMessage();
+                $logger->log('error', 'WP_CACHE enable failed: ' . $wpCacheError);
+            }
             self::scheduleCleanup();
             update_option('atlas_cache_installed_version', ATLAS_CACHE_VERSION, false);
-            update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => ''], false);
+            update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => $wpCacheError], false);
         } catch (RuntimeException $exception) {
             update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => $exception->getMessage()], false);
             $logger->log('error', 'Activation failed: ' . $exception->getMessage());
