@@ -1,15 +1,15 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.6",
-  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.6.zip",
+  "version": "0.1.8",
+  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.8.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
   "requires_php": "8.0",
-  "last_updated": "2026-07-28 00:00:00",
+  "last_updated": "2026-07-29 00:00:00",
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "0.1.6: Run queue table migrations after plugin updates and make store log entries easier to read."
+    "changelog": "0.1.8: Add ordered database migrations, improve the Queue empty state and clean up Atlas Cache state on uninstall."
   }
 }
