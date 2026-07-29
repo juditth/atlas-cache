@@ -11,6 +11,7 @@ use AtlasCache\DropIn\DropInInstaller;
 use AtlasCache\Queue\QueueRepository;
 use AtlasCache\Queue\QueueWorker;
 use AtlasCache\Storage\CacheStorageInterface;
+use AtlasCache\WordPress\SitemapUrlCollector;
 use RuntimeException;
 
 final class AdminMenu
@@ -22,6 +23,7 @@ final class AdminMenu
     private QueueRepository $queue;
     private QueueWorker $worker;
     private Logger $logger;
+    private SitemapUrlCollector $sitemapUrlCollector;
 
     public function __construct(
         SettingsRepository $settings,
@@ -30,7 +32,8 @@ final class AdminMenu
         DropInInstaller $dropInInstaller,
         QueueRepository $queue,
         QueueWorker $worker,
-        Logger $logger
+        Logger $logger,
+        SitemapUrlCollector $sitemapUrlCollector
     ) {
         $this->settings = $settings;
         $this->storage = $storage;
@@ -39,6 +42,7 @@ final class AdminMenu
         $this->queue = $queue;
         $this->worker = $worker;
         $this->logger = $logger;
+        $this->sitemapUrlCollector = $sitemapUrlCollector;
     }
 
     public function register(): void
@@ -134,6 +138,9 @@ final class AdminMenu
 
         $tool = isset($_GET['atlas_cache_tool']) ? sanitize_key((string) wp_unslash($_GET['atlas_cache_tool'])) : '';
         $url = isset($_GET['atlas_cache_url']) ? esc_url_raw((string) wp_unslash($_GET['atlas_cache_url'])) : '';
+        if ($url !== '' && !$this->isCacheablePublicUrl($url)) {
+            $url = '';
+        }
 
         if ($url !== '' && $tool === 'revalidate-page') {
             $this->queue->enqueueUrl($url, 1, 'revalidate');
@@ -428,41 +435,7 @@ final class AdminMenu
      */
     private function collectRefreshUrls(): array
     {
-        $urls = [home_url('/')];
-        $excludedPostTypes = [
-            'attachment',
-            'bricks_template',
-            'wp_template',
-            'wp_template_part',
-            'wp_navigation',
-        ];
-        $postTypes = array_values(array_diff(get_post_types(['public' => true], 'names'), $excludedPostTypes));
-        $postTypes = apply_filters('atlas_cache_refresh_post_types', $postTypes);
-
-        if (!is_array($postTypes) || $postTypes === []) {
-            return array_values(array_unique($urls));
-        }
-
-        $postTypes = array_values(array_filter(array_map('strval', $postTypes)));
-        $ids = get_posts([
-            'post_type' => $postTypes,
-            'post_status' => 'publish',
-            'posts_per_page' => -1,
-            'fields' => 'ids',
-            'orderby' => 'ID',
-            'order' => 'ASC',
-            'no_found_rows' => true,
-            'suppress_filters' => false,
-        ]);
-
-        foreach ($ids as $id) {
-            $permalink = get_permalink((int) $id);
-            if (is_string($permalink) && $permalink !== '') {
-                $urls[] = $permalink;
-            }
-        }
-
-        return array_values(array_unique($urls));
+        return $this->sitemapUrlCollector->collect();
     }
 
     /**
@@ -775,7 +748,8 @@ final class AdminMenu
     private function currentCacheTargetUrl(): string
     {
         if (!is_admin()) {
-            return $this->currentPublicUrl();
+            $url = $this->currentPublicUrl();
+            return $this->isCacheablePublicUrl($url) ? $url : '';
         }
 
         $postId = isset($_GET['post']) ? (int) $_GET['post'] : 0;
@@ -785,7 +759,7 @@ final class AdminMenu
 
         $permalink = get_permalink($postId);
 
-        return is_string($permalink) ? esc_url_raw($permalink) : '';
+        return is_string($permalink) && $this->isCacheablePublicUrl($permalink) ? esc_url_raw($permalink) : '';
     }
 
     private function currentPublicUrl(): string
@@ -821,6 +795,19 @@ final class AdminMenu
         }
 
         return $this->currentPublicUrl();
+    }
+
+    private function isCacheablePublicUrl(string $url): bool
+    {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts) || !empty($parts['query'])) {
+            return false;
+        }
+
+        $homeHost = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return $homeHost !== '' && $host === $homeHost;
     }
 
     /**

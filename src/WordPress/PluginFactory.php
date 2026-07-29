@@ -35,9 +35,10 @@ final class PluginFactory
         $cacheKeyGenerator = new CacheKeyGenerator(new PathSanitizer());
         $requestPolicy = new RequestPolicy();
         $responsePolicy = new ResponsePolicy();
+        $sitemapUrlCollector = new SitemapUrlCollector();
         $queue = new QueueRepository($GLOBALS['wpdb']);
         $worker = new QueueWorker($queue, $settings, $logger, $cacheKeyGenerator, $storage);
-        $contentChangeSubscriber = new ContentChangeSubscriber($queue, $settings, $logger);
+        $contentChangeSubscriber = new ContentChangeSubscriber($queue, $settings, $logger, $sitemapUrlCollector);
         $middleware = new PageCacheMiddleware(
             $settings,
             $cacheKeyGenerator,
@@ -47,7 +48,7 @@ final class PluginFactory
             $logger,
             new SystemClock()
         );
-        $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger);
+        $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger, $sitemapUrlCollector);
         $updater = new SelfHostedUpdater(ATLAS_CACHE_FILE, ATLAS_CACHE_VERSION, (string) ATLAS_CACHE_UPDATE_INFO_URL);
 
         return new Plugin($settings, $middleware, $adminMenu, $runtimeConfigWriter, $logger, $queue, $worker, $contentChangeSubscriber, $updater);

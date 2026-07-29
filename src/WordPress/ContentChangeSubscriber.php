@@ -13,12 +13,14 @@ final class ContentChangeSubscriber
     private QueueRepository $queue;
     private SettingsRepository $settings;
     private Logger $logger;
+    private SitemapUrlCollector $sitemapUrlCollector;
 
-    public function __construct(QueueRepository $queue, SettingsRepository $settings, Logger $logger)
+    public function __construct(QueueRepository $queue, SettingsRepository $settings, Logger $logger, SitemapUrlCollector $sitemapUrlCollector)
     {
         $this->queue = $queue;
         $this->settings = $settings;
         $this->logger = $logger;
+        $this->sitemapUrlCollector = $sitemapUrlCollector;
     }
 
     public function register(): void
@@ -73,7 +75,7 @@ final class ContentChangeSubscriber
     {
         $urls = [];
         $permalink = get_permalink($postId);
-        if (is_string($permalink) && $permalink !== '') {
+        if (is_string($permalink) && $this->isCacheablePublicUrl($permalink)) {
             $urls[] = $permalink;
         }
 
@@ -89,34 +91,7 @@ final class ContentChangeSubscriber
      */
     private function collectSiteUrls(): array
     {
-        $urls = [home_url('/')];
-        $postTypes = array_values(array_filter(get_post_types(['public' => true], 'names'), function (string $postType): bool {
-            return $this->isCacheablePostType($postType);
-        }));
-
-        if ($postTypes === []) {
-            return $urls;
-        }
-
-        $ids = get_posts([
-            'post_type' => $postTypes,
-            'post_status' => 'publish',
-            'posts_per_page' => -1,
-            'fields' => 'ids',
-            'orderby' => 'ID',
-            'order' => 'ASC',
-            'no_found_rows' => true,
-            'suppress_filters' => false,
-        ]);
-
-        foreach ($ids as $id) {
-            $permalink = get_permalink((int) $id);
-            if (is_string($permalink) && $permalink !== '') {
-                $urls[] = $permalink;
-            }
-        }
-
-        return array_values(array_unique($urls));
+        return $this->sitemapUrlCollector->collect();
     }
 
     private function isCacheablePostType(string $postType): bool
@@ -137,6 +112,19 @@ final class ContentChangeSubscriber
     private function isGlobalPostType(string $postType): bool
     {
         return in_array($postType, $this->globalPostTypes(), true);
+    }
+
+    private function isCacheablePublicUrl(string $url): bool
+    {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts) || !empty($parts['query'])) {
+            return false;
+        }
+
+        $homeHost = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return $homeHost !== '' && $host === $homeHost;
     }
 
     /**
