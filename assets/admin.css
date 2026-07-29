@@ -50,6 +50,29 @@
     border-bottom: 1px solid #f0f0f1;
 }
 
+.atlas-cache-main-toggle {
+    margin: 0 0 18px;
+    padding: 16px 18px;
+    background: #f6f7f7;
+    border: 1px solid #c3c4c7;
+    border-left: 4px solid #2271b1;
+    border-radius: 6px;
+}
+
+.atlas-cache-main-toggle label {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.atlas-cache-main-toggle input {
+    margin-top: 0;
+}
+
+.atlas-cache-main-toggle .description {
+    margin: 8px 0 0;
+}
+
 .atlas-cache-field:first-of-type {
     padding-top: 0;
 }

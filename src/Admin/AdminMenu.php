@@ -104,10 +104,10 @@ final class AdminMenu
         $adminBar->add_node([
             'id' => 'atlas-cache-purge-all',
             'parent' => 'atlas-cache',
-            'title' => 'Purge all',
+            'title' => 'Clear cache files',
             'href' => $this->toolbarActionUrl('purge-all', '', $this->currentRequestUrl()),
             'meta' => [
-                'onclick' => 'return confirm("Really purge the complete HTML cache now?");',
+                'onclick' => 'return confirm("Clear all Atlas Cache HTML files now? New cache files can be created again if Enable cache is on.");',
             ],
         ]);
         $adminBar->add_node([
@@ -153,7 +153,7 @@ final class AdminMenu
 
         if ($tool === 'purge-all') {
             $this->storage->purgeAll();
-            $this->logger->log('purge', 'Toolbar purge complete cache');
+            $this->logger->log('purge', 'Toolbar clear cache files');
         }
 
         $redirect = isset($_GET['atlas_cache_redirect']) ? esc_url_raw((string) wp_unslash($_GET['atlas_cache_redirect'])) : '';
@@ -214,7 +214,7 @@ final class AdminMenu
         echo '<form method="post" class="atlas-cache-panel atlas-cache-form">';
         wp_nonce_field('atlas_cache_save_settings');
         echo '<input type="hidden" name="atlas_cache_save_settings" value="1">';
-        $this->checkbox('enabled', 'Enable cache', $settings, false, 'Turns public HTML caching on or off.');
+        $this->mainCheckbox('enabled', 'Enable cache', $settings, 'Master switch for Atlas Cache. When off, Atlas Cache does not serve existing HTML cache files and does not store new ones.');
         $this->number('ttl', 'TTL in seconds', $settings, 60, 31536000, 'After this time cached HTML is considered stale. With stale mode enabled, the old version can still be served while a new one is prepared.');
         $this->checkbox('stale_while_revalidate', 'Stale while revalidate', $settings, false, 'Visitors can keep receiving the last complete cached HTML while revalidation runs in the background.');
         $this->number('worker_batch_size', 'URLs per worker run', $settings, 1, 50, 'How many queued URLs the worker may process in one run.');
@@ -276,11 +276,10 @@ final class AdminMenu
         echo '<form method="post" class="atlas-cache-tools">';
         wp_nonce_field('atlas_cache_tools');
         $this->toolButton('queue-revalidate-all', 'Revalidate cache of site', 'Queues the homepage and published public content for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
-        $this->toolButton('queue-purge-all', 'Purge cache of site', 'Queues public content as purge jobs. The worker removes existing HTML cache, and the next anonymous visit can generate it again.', 'secondary');
         $this->toolButton('run-worker', 'Run worker now', 'Processes pending queue items immediately, using the configured URLs-per-run limit. Revalidate jobs use an internal request.', 'secondary');
         $this->toolButton('rewrite-config', 'Repair fast-cache settings file', 'Usually not needed. Settings are written automatically. Use this only when diagnostics reports a missing or broken advanced-cache.php config file.', 'secondary');
         $this->toolButton('install-dropin', 'Reinstall drop-in', 'Copies the Atlas Cache advanced-cache.php file into wp-content again. It will not overwrite another plugin’s drop-in unless the Atlas Cache ownership marker is present.', 'secondary');
-        $this->toolButton('purge-all', 'Emergency purge complete cache now', 'Immediately removes all stored HTML cache files without using the queue. Use only for cache leaks or serious cache errors.', 'primary', 'Really purge the complete HTML cache now?');
+        $this->toolButton('purge-all', 'Clear cache files', 'Immediately deletes all Atlas Cache HTML files without using the queue. If Enable cache is on, new cache files can be created again by future public visits and revalidation jobs.', 'primary', 'Clear all Atlas Cache HTML files now? New cache files can be created again if Enable cache is on.');
         echo '</form>';
         $this->footer();
     }
@@ -381,8 +380,8 @@ final class AdminMenu
         try {
             if ($tool === 'purge-all') {
                 $this->storage->purgeAll();
-                $this->logger->log('purge', 'Manual purge all');
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Emergency purge completed immediately. No queue item was created.'], false);
+                $this->logger->log('purge', 'Manual clear cache files');
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache files were cleared immediately. No queue item was created. If Enable cache is on, new cache files can be created again.'], false);
                 return;
             }
 
@@ -392,15 +391,6 @@ final class AdminMenu
                 $message = 'Revalidate queued: ' . $this->formatQueueResult($result);
                 $this->logger->log('revalidate', $message);
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
-                return;
-            }
-
-            if ($tool === 'queue-purge-all') {
-                $urls = $this->collectRefreshUrls();
-                $result = $this->queue->enqueueManyDetailed($urls, 10, 'purge');
-                $message = 'Purge queued: ' . $this->formatQueueResult($result);
-                $this->logger->log('purge', $message);
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_purge_queued' => time(), 'last_purge_queued_result' => $result, 'last_tool_message' => $message], false);
                 return;
             }
 
@@ -807,6 +797,17 @@ final class AdminMenu
         }
 
         return $this->currentPublicUrl();
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     */
+    private function mainCheckbox(string $key, string $label, array $settings, string $description): void
+    {
+        echo '<div class="atlas-cache-main-toggle">';
+        echo '<label><input type="checkbox" name="' . esc_attr($key) . '" value="1" ' . checked(!empty($settings[$key]), true, false) . '> <span>' . esc_html($label) . '</span></label>';
+        echo '<p class="description">' . esc_html($description) . '</p>';
+        echo '</div>';
     }
 
     /**
