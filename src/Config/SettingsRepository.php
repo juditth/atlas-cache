@@ -14,7 +14,7 @@ final class SettingsRepository
     public function defaults(): array
     {
         return [
-            'enabled' => true,
+            'enabled' => false,
             'ttl' => 86400,
             'stale_while_revalidate' => true,
             'worker_batch_size' => 4,
