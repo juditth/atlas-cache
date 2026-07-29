@@ -15,30 +15,31 @@ final class SitemapUrlCollector
     public function collect(): array
     {
         $urls = [home_url('/')];
+        $sitemapUrls = [];
 
-        if (!function_exists('simplexml_load_string')) {
-            return $urls;
-        }
+        if (function_exists('simplexml_load_string')) {
+            $sitemaps = apply_filters('atlas_cache_sitemap_urls', [
+                home_url('/wp-sitemap.xml'),
+                home_url('/sitemap_index.xml'),
+            ]);
 
-        $sitemaps = apply_filters('atlas_cache_sitemap_urls', [
-            home_url('/wp-sitemap.xml'),
-            home_url('/sitemap_index.xml'),
-        ]);
-
-        if (!is_array($sitemaps)) {
-            return $urls;
-        }
-
-        $visited = [];
-        foreach ($sitemaps as $sitemap) {
-            $urls = array_merge($urls, $this->collectFromSitemap((string) $sitemap, $visited, 0));
-            $urls = $this->uniqueUrls($urls);
-            if (count($urls) >= self::MAX_URLS) {
-                break;
+            if (is_array($sitemaps)) {
+                $visited = [];
+                foreach ($sitemaps as $sitemap) {
+                    $sitemapUrls = array_merge($sitemapUrls, $this->collectFromSitemap((string) $sitemap, $visited, 0));
+                    $sitemapUrls = $this->uniqueUrls($sitemapUrls);
+                    if (count($sitemapUrls) >= self::MAX_URLS) {
+                        break;
+                    }
+                }
             }
         }
 
-        return array_slice($this->uniqueUrls($urls), 0, self::MAX_URLS);
+        if ($sitemapUrls === []) {
+            $sitemapUrls = $this->collectPublishedContentUrls();
+        }
+
+        return array_slice($this->uniqueUrls(array_merge($urls, $sitemapUrls)), 0, self::MAX_URLS);
     }
 
     /**
@@ -140,6 +141,38 @@ final class SitemapUrlCollector
     private function isStaticAssetPath(string $path): bool
     {
         return preg_match('/\.(?:avif|bmp|css|eot|gif|ico|jpe?g|js|json|map|mp3|mp4|ogg|otf|pdf|png|svg|ttf|txt|wav|webm|webp|woff2?|xml|zip)$/i', $path) === 1;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function collectPublishedContentUrls(): array
+    {
+        $ids = get_posts([
+            'post_type' => ['page', 'post'],
+            'post_status' => 'publish',
+            'posts_per_page' => self::MAX_URLS,
+            'orderby' => 'ID',
+            'order' => 'ASC',
+            'fields' => 'ids',
+            'no_found_rows' => true,
+            'update_post_meta_cache' => false,
+            'update_post_term_cache' => false,
+        ]);
+
+        if (!is_array($ids)) {
+            return [];
+        }
+
+        $urls = [];
+        foreach ($ids as $id) {
+            $permalink = get_permalink((int) $id);
+            if (is_string($permalink) && $this->isCacheableSitemapUrl($permalink)) {
+                $urls[] = esc_url_raw($permalink);
+            }
+        }
+
+        return $this->uniqueUrls($urls);
     }
 
     /**
