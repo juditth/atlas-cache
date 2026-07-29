@@ -16,6 +16,7 @@ wp_clear_scheduled_hook('atlas_cache_process_queue');
 wp_clear_scheduled_hook('puc_cron_check_updates-atlas-cache');
 
 atlas_cache_uninstall_restore_wp_cache();
+atlas_cache_uninstall_remove_htaccess_browser_cache();
 
 global $wpdb;
 
@@ -115,4 +116,22 @@ function atlas_cache_uninstall_wp_config_path(): string
     }
 
     return '';
+}
+
+function atlas_cache_uninstall_remove_htaccess_browser_cache(): void
+{
+    $path = ABSPATH . '.htaccess';
+    if (!is_file($path) || !is_writable($path)) {
+        return;
+    }
+
+    $contents = file_get_contents($path);
+    if (!is_string($contents) || strpos($contents, '# BEGIN Atlas Cache Browser Cache') === false) {
+        return;
+    }
+
+    $pattern = '~\R?\# BEGIN Atlas Cache Browser Cache.*?\# END Atlas Cache Browser Cache\R?~s';
+    $contents = rtrim((string) preg_replace($pattern, "\n", $contents)) . "\n";
+
+    @file_put_contents($path, $contents, LOCK_EX);
 }
