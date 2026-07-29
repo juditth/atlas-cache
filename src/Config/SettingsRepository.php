@@ -30,6 +30,10 @@ final class SettingsRepository
                 'page' => 5,
                 'post' => 20,
             ],
+            'taxonomy_priorities' => [
+                'category' => 15,
+                'post_tag' => 25,
+            ],
             'excluded_url_patterns' => [
                 '/wp-admin',
                 '/wp-login.php',
@@ -97,7 +101,8 @@ final class SettingsRepository
         $settings['debug_log'] = !empty($settings['debug_log']);
         $settings['debug_log_retention_days'] = max(1, min(365, (int) $settings['debug_log_retention_days']));
         $settings['refresh_token'] = $this->normalizeToken((string) ($settings['refresh_token'] ?? ''));
-        $settings['post_type_priorities'] = $this->normalizePostTypePriorities($settings['post_type_priorities'] ?? []);
+        $settings['post_type_priorities'] = $this->normalizePriorityMap($settings['post_type_priorities'] ?? []);
+        $settings['taxonomy_priorities'] = $this->normalizePriorityMap($settings['taxonomy_priorities'] ?? []);
         $settings['excluded_url_patterns'] = $this->normalizeStringList($settings['excluded_url_patterns'] ?? []);
         $settings['sensitive_cookies'] = $this->normalizeStringList($settings['sensitive_cookies'] ?? []);
         $settings['query_string_whitelist'] = $this->normalizeStringList($settings['query_string_whitelist'] ?? []);
@@ -152,17 +157,17 @@ final class SettingsRepository
      * @param mixed $value
      * @return array<string, int>
      */
-    private function normalizePostTypePriorities($value): array
+    private function normalizePriorityMap($value): array
     {
         if (!is_array($value)) {
             return [];
         }
 
         $priorities = [];
-        foreach ($value as $postType => $priority) {
-            $postType = sanitize_key((string) $postType);
-            if ($postType !== '') {
-                $priorities[$postType] = max(1, min(100, (int) $priority));
+        foreach ($value as $key => $priority) {
+            $key = sanitize_key((string) $key);
+            if ($key !== '') {
+                $priorities[$key] = max(1, min(100, (int) $priority));
             }
         }
 

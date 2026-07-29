@@ -162,9 +162,10 @@ final class ContentChangeSubscriber
     {
         $created = 0;
         $priorities = $this->priorityResolver->priorities();
+        $taxonomyPriorities = $this->priorityResolver->taxonomyPriorities();
 
         foreach ($urls as $url) {
-            $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities), 'revalidate', $delay);
+            $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities, $taxonomyPriorities), 'revalidate', $delay);
             if ($status === 'created' || $status === 'requeued') {
                 $created++;
             }

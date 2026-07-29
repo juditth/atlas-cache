@@ -380,6 +380,7 @@ final class AdminMenu
             'debug_log' => !empty($_POST['debug_log']),
             'debug_log_retention_days' => (int) ($_POST['debug_log_retention_days'] ?? $current['debug_log_retention_days']),
             'post_type_priorities' => $this->postedPostTypePriorities($current['post_type_priorities'] ?? []),
+            'taxonomy_priorities' => $this->postedTaxonomyPriorities($current['taxonomy_priorities'] ?? []),
             'excluded_url_patterns' => $this->postedLines('excluded_url_patterns', $current['excluded_url_patterns']),
             'sensitive_cookies' => $this->postedLines('sensitive_cookies', $current['sensitive_cookies']),
             'query_string_whitelist' => $this->postedLines('query_string_whitelist', $current['query_string_whitelist']),
@@ -497,9 +498,10 @@ final class AdminMenu
             'failed' => 0,
         ];
         $priorities = $this->priorityResolver->priorities();
+        $taxonomyPriorities = $this->priorityResolver->taxonomyPriorities();
 
         foreach ($urls as $url) {
-            $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities), 'revalidate');
+            $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities, $taxonomyPriorities), 'revalidate');
             if (isset($result[$status])) {
                 $result[$status]++;
             } else {
@@ -546,31 +548,72 @@ final class AdminMenu
     }
 
     /**
+     * @param mixed $fallback
+     * @return array<string, int>
+     */
+    private function postedTaxonomyPriorities($fallback): array
+    {
+        $raw = isset($_POST['taxonomy_priorities']) && is_array($_POST['taxonomy_priorities'])
+            ? wp_unslash($_POST['taxonomy_priorities'])
+            : (is_array($fallback) ? $fallback : []);
+        $priorities = [];
+
+        foreach ($this->priorityResolver->taxonomies() as $taxonomy) {
+            $name = (string) $taxonomy->name;
+            $priorities[$name] = max(1, min(100, (int) ($raw[$name] ?? $this->priorityResolver->defaultTaxonomyPriority($name))));
+        }
+
+        return $priorities;
+    }
+
+    /**
      * @param array<string, mixed> $settings
      */
     private function renderPostTypePriorityTable(array $settings): void
     {
         $postTypes = $this->priorityResolver->postTypes();
-        if ($postTypes === []) {
+        $taxonomies = $this->priorityResolver->taxonomies();
+        if ($postTypes === [] && $taxonomies === []) {
             return;
         }
 
         $priorities = is_array($settings['post_type_priorities'] ?? null) ? $settings['post_type_priorities'] : [];
+        $taxonomyPriorities = is_array($settings['taxonomy_priorities'] ?? null) ? $settings['taxonomy_priorities'] : [];
 
         echo '<h2>Cache warm-up priority</h2>';
-        echo '<p class="description">Lower numbers run earlier in the queue. Use this to warm important pages before lower-priority blog content.</p>';
-        echo '<table class="widefat striped atlas-cache-priority-table"><thead><tr><th>Content type</th><th>Slug</th><th>Priority</th></tr></thead><tbody>';
-        foreach ($postTypes as $postType) {
-            $name = (string) $postType->name;
-            $label = (string) ($postType->labels->name ?? $name);
-            $priority = (int) ($priorities[$name] ?? $this->priorityResolver->defaultPriority($name));
-            echo '<tr>';
-            echo '<td>' . esc_html($label) . '</td>';
-            echo '<td><code>' . esc_html($name) . '</code></td>';
-            echo '<td><input type="number" class="small-text" name="post_type_priorities[' . esc_attr($name) . ']" value="' . esc_attr((string) $priority) . '" min="1" max="100"></td>';
-            echo '</tr>';
+        echo '<p class="description">Lower numbers run earlier in the queue. Use this to warm important pages and archive pages before lower-priority blog content.</p>';
+
+        if ($postTypes !== []) {
+            echo '<h3>Content types</h3>';
+            echo '<table class="widefat striped atlas-cache-priority-table"><thead><tr><th>Content type</th><th>Slug</th><th>Priority</th></tr></thead><tbody>';
+            foreach ($postTypes as $postType) {
+                $name = (string) $postType->name;
+                $label = (string) ($postType->labels->name ?? $name);
+                $priority = (int) ($priorities[$name] ?? $this->priorityResolver->defaultPriority($name));
+                echo '<tr>';
+                echo '<td>' . esc_html($label) . '</td>';
+                echo '<td><code>' . esc_html($name) . '</code></td>';
+                echo '<td><input type="number" class="small-text" name="post_type_priorities[' . esc_attr($name) . ']" value="' . esc_attr((string) $priority) . '" min="1" max="100"></td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
         }
-        echo '</tbody></table>';
+
+        if ($taxonomies !== []) {
+            echo '<h3>Taxonomy archives</h3>';
+            echo '<table class="widefat striped atlas-cache-priority-table"><thead><tr><th>Taxonomy archive</th><th>Slug</th><th>Priority</th></tr></thead><tbody>';
+            foreach ($taxonomies as $taxonomy) {
+                $name = (string) $taxonomy->name;
+                $label = (string) ($taxonomy->labels->name ?? $name);
+                $priority = (int) ($taxonomyPriorities[$name] ?? $this->priorityResolver->defaultTaxonomyPriority($name));
+                echo '<tr>';
+                echo '<td>' . esc_html($label) . '</td>';
+                echo '<td><code>' . esc_html($name) . '</code></td>';
+                echo '<td><input type="number" class="small-text" name="taxonomy_priorities[' . esc_attr($name) . ']" value="' . esc_attr((string) $priority) . '" min="1" max="100"></td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+        }
     }
 
     /**
