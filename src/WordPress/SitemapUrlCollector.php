@@ -76,10 +76,9 @@ final class SitemapUrlCollector
         }
 
         $root = strtolower($xml->getName());
-        $locations = $this->locations($xml);
         if ($root === 'sitemapindex') {
             $urls = [];
-            foreach ($locations as $location) {
+            foreach ($this->locations($xml, 'sitemap') as $location) {
                 $urls = array_merge($urls, $this->collectFromSitemap($location, $visited, $depth + 1));
                 if (count($urls) >= self::MAX_URLS) {
                     break;
@@ -89,7 +88,7 @@ final class SitemapUrlCollector
             return array_slice($this->uniqueUrls($urls), 0, self::MAX_URLS);
         }
 
-        return array_values(array_filter($locations, function (string $location): bool {
+        return array_values(array_filter($this->locations($xml, 'url'), function (string $location): bool {
             return $this->isCacheableSitemapUrl($location);
         }));
     }
@@ -97,9 +96,10 @@ final class SitemapUrlCollector
     /**
      * @return list<string>
      */
-    private function locations(\SimpleXMLElement $xml): array
+    private function locations(\SimpleXMLElement $xml, string $container): array
     {
-        $nodes = $xml->xpath('//*[local-name()="loc"]');
+        $container = $container === 'sitemap' ? 'sitemap' : 'url';
+        $nodes = $xml->xpath('/*[local-name()="' . $xml->getName() . '"]/*[local-name()="' . $container . '"]/*[local-name()="loc"]');
         if (!is_array($nodes)) {
             return [];
         }
@@ -122,6 +122,10 @@ final class SitemapUrlCollector
             return false;
         }
 
+        if ($this->isStaticAssetPath((string) ($parts['path'] ?? ''))) {
+            return false;
+        }
+
         $scheme = strtolower((string) ($parts['scheme'] ?? ''));
         if ($scheme !== 'http' && $scheme !== 'https') {
             return false;
@@ -131,6 +135,11 @@ final class SitemapUrlCollector
         $host = strtolower((string) ($parts['host'] ?? ''));
 
         return $homeHost !== '' && $host === $homeHost;
+    }
+
+    private function isStaticAssetPath(string $path): bool
+    {
+        return preg_match('/\.(?:avif|bmp|css|eot|gif|ico|jpe?g|js|json|map|mp3|mp4|ogg|otf|pdf|png|svg|ttf|txt|wav|webm|webp|woff2?|xml|zip)$/i', $path) === 1;
     }
 
     /**
