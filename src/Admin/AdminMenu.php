@@ -184,7 +184,7 @@ final class AdminMenu
         if (isset($_POST['atlas_cache_tool'])) {
             check_admin_referer('atlas_cache_tools');
             $this->runTool((string) $_POST['atlas_cache_tool']);
-            wp_safe_redirect(add_query_arg('atlas-cache-updated', '1', wp_get_referer() ?: admin_url('admin.php?page=atlas-cache-tools')));
+            wp_safe_redirect(add_query_arg(['atlas-cache-updated' => '1', 'atlas-cache-tool' => '1'], wp_get_referer() ?: admin_url('admin.php?page=atlas-cache-tools')));
             exit;
         }
     }
@@ -382,40 +382,46 @@ final class AdminMenu
             if ($tool === 'purge-all') {
                 $this->storage->purgeAll();
                 $this->logger->log('purge', 'Manual purge all');
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Emergency purge completed immediately. No queue item was created.'], false);
                 return;
             }
 
             if ($tool === 'queue-revalidate-all') {
                 $urls = $this->collectRefreshUrls();
-                $created = $this->queue->enqueueMany($urls, 10, 'revalidate');
-                $this->logger->log('revalidate', 'Queued revalidate URLs: ' . $created . ' new / ' . count($urls) . ' total');
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_count' => $created], false);
+                $result = $this->queue->enqueueManyDetailed($urls, 10, 'revalidate');
+                $message = 'Revalidate queued: ' . $this->formatQueueResult($result);
+                $this->logger->log('revalidate', $message);
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
                 return;
             }
 
             if ($tool === 'queue-purge-all') {
                 $urls = $this->collectRefreshUrls();
-                $created = $this->queue->enqueueMany($urls, 10, 'purge');
-                $this->logger->log('purge', 'Queued purge URLs: ' . $created . ' new / ' . count($urls) . ' total');
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_purge_queued' => time(), 'last_purge_queued_count' => $created], false);
+                $result = $this->queue->enqueueManyDetailed($urls, 10, 'purge');
+                $message = 'Purge queued: ' . $this->formatQueueResult($result);
+                $this->logger->log('purge', $message);
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_purge_queued' => time(), 'last_purge_queued_result' => $result, 'last_tool_message' => $message], false);
                 return;
             }
 
             if ($tool === 'run-worker') {
                 $result = $this->worker->run();
-                $this->logger->log('revalidate', 'Manual worker run: processed=' . $result['processed'] . ', done=' . $result['done'] . ', failed=' . $result['failed']);
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_worker_run' => time(), 'last_worker_result' => $result], false);
+                $message = 'Worker run completed: processed=' . $result['processed'] . ', done=' . $result['done'] . ', failed=' . $result['failed'] . '.';
+                $this->logger->log('revalidate', $message);
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_worker_run' => time(), 'last_worker_result' => $result, 'last_tool_message' => $message], false);
                 return;
             }
 
             if ($tool === 'rewrite-config') {
                 $this->runtimeConfigWriter->write();
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Fast-cache settings file was rewritten.'], false);
                 return;
             }
 
             if ($tool === 'install-dropin') {
                 $this->runtimeConfigWriter->write();
                 $this->dropInInstaller->install();
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Drop-in was reinstalled and fast-cache settings file was rewritten.'], false);
             }
         } catch (RuntimeException $exception) {
             update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
@@ -632,8 +638,29 @@ final class AdminMenu
     private function notice(): void
     {
         if (isset($_GET['atlas-cache-updated'])) {
-            echo '<div class="notice notice-success is-dismissible"><p>Saved.</p></div>';
+            $message = 'Saved.';
+            if (isset($_GET['atlas-cache-tool'])) {
+                $diagnostics = get_option('atlas_cache_diagnostics', []);
+                if (is_array($diagnostics) && !empty($diagnostics['last_tool_message'])) {
+                    $message = (string) $diagnostics['last_tool_message'];
+                }
+            }
+
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($message) . '</p></div>';
         }
+    }
+
+    /**
+     * @param array{total:int, created:int, requeued:int, updated:int, skipped:int, failed:int} $result
+     */
+    private function formatQueueResult(array $result): string
+    {
+        return (int) $result['created'] . ' new, '
+            . (int) $result['requeued'] . ' requeued, '
+            . (int) $result['updated'] . ' already pending updated, '
+            . (int) $result['skipped'] . ' skipped, '
+            . (int) $result['failed'] . ' failed, '
+            . (int) $result['total'] . ' total.';
     }
 
     private function card(string $label, string $value): void

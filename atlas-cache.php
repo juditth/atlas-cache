@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Atlas Cache
  * Description: Jednoduchá a bezpečná HTML page cache přes advanced-cache.php drop-in.
- * Version: 0.1.3
+ * Version: 0.1.4
  * Requires at least: 6.0
  * Requires PHP: 8.0
  * Update URI: atlas-cache
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('ATLAS_CACHE_VERSION', '0.1.3');
+define('ATLAS_CACHE_VERSION', '0.1.4');
 define('ATLAS_CACHE_FILE', __FILE__);
 define('ATLAS_CACHE_DIR', plugin_dir_path(__FILE__));
 define('ATLAS_CACHE_URL', plugin_dir_url(__FILE__));

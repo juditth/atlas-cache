@@ -107,22 +107,48 @@ final class QueueRepository
      */
     public function enqueueMany(array $urls, int $priority = 10, string $mode = 'revalidate', int $delaySeconds = 0): int
     {
-        $count = 0;
+        $result = $this->enqueueManyDetailed($urls, $priority, $mode, $delaySeconds);
+
+        return $result['created'] + $result['requeued'];
+    }
+
+    /**
+     * @param list<string> $urls
+     * @return array{total:int, created:int, requeued:int, updated:int, skipped:int, failed:int}
+     */
+    public function enqueueManyDetailed(array $urls, int $priority = 10, string $mode = 'revalidate', int $delaySeconds = 0): array
+    {
+        $result = [
+            'total' => count($urls),
+            'created' => 0,
+            'requeued' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+        ];
 
         foreach ($urls as $url) {
-            if ($this->enqueueUrl($url, $priority, $mode, $delaySeconds)) {
-                $count++;
+            $status = $this->enqueueUrlDetailed($url, $priority, $mode, $delaySeconds);
+            if (isset($result[$status])) {
+                $result[$status]++;
+            } else {
+                $result['failed']++;
             }
         }
 
-        return $count;
+        return $result;
     }
 
     public function enqueueUrl(string $url, int $priority = 10, string $mode = 'revalidate', int $delaySeconds = 0): bool
     {
+        return in_array($this->enqueueUrlDetailed($url, $priority, $mode, $delaySeconds), ['created', 'requeued'], true);
+    }
+
+    public function enqueueUrlDetailed(string $url, int $priority = 10, string $mode = 'revalidate', int $delaySeconds = 0): string
+    {
         $url = esc_url_raw($url);
         if ($url === '') {
-            return false;
+            return 'skipped';
         }
 
         $mode = $this->normalizeMode($mode);
@@ -142,7 +168,7 @@ final class QueueRepository
 
         if (is_array($existing)) {
             $wasAlreadyPending = in_array((string) $existing['status'], ['pending', 'running'], true);
-            $this->wpdb->update(
+            $updated = $this->wpdb->update(
                 $table,
                 [
                     'url' => $url,
@@ -160,7 +186,11 @@ final class QueueRepository
                 ['%d']
             );
 
-            return !$wasAlreadyPending;
+            if ($updated === false) {
+                return 'failed';
+            }
+
+            return $wasAlreadyPending ? 'updated' : 'requeued';
         }
 
         $inserted = $this->wpdb->insert(
@@ -181,7 +211,7 @@ final class QueueRepository
             ['%s', '%s', '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s']
         );
 
-        return $inserted !== false;
+        return $inserted !== false ? 'created' : 'failed';
     }
 
     /**

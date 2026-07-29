@@ -1,7 +1,7 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.3",
-  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.3.zip",
+  "version": "0.1.4",
+  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.4.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
@@ -10,6 +10,6 @@
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "0.1.3: Fix queue revalidation when detailed debug headers are disabled."
+    "changelog": "0.1.4: Show detailed queue action results for new, requeued and already pending URLs."
   }
 }
