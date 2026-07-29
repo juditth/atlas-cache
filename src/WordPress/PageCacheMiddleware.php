@@ -104,6 +104,8 @@ final class PageCacheMiddleware
             $language = $this->language();
             $key = $this->cacheKeyGenerator->generate($host, $path, $language, 'public');
             $now = $this->clock->now();
+            $dropInStatus = $this->responseHeader('X-Atlas-Cache');
+            $dropInReason = $this->responseHeader('X-Atlas-Cache-Reason');
 
             $url = home_url($path);
             $metadata = [
@@ -122,7 +124,8 @@ final class PageCacheMiddleware
 
             $this->storage->write($key, $html, $metadata);
             $this->debugHeader('MISS', 'Stored');
-            $this->maybeLog('store', 'url=' . $url . ' key=' . $key->debugKey(), $settings);
+            $this->debugDropInHeaders($dropInStatus, $dropInReason, $settings);
+            $this->maybeLog('store', 'url=' . $url . ' key=' . $key->debugKey() . $this->formatDropInLog($dropInStatus, $dropInReason), $settings);
 
             if ($this->frontendDebugActive($settings)) {
                 $html .= "\n<!-- Atlas Cache: MISS; stored=" . esc_html(gmdate('c', $now)) . '; key=' . esc_html($key->debugKey()) . " -->";
@@ -178,6 +181,43 @@ final class PageCacheMiddleware
         if (!empty($settings['debug_headers'])) {
             header('X-Atlas-Cache-Reason: ' . $reason);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     */
+    private function debugDropInHeaders(string $status, string $reason, array $settings): void
+    {
+        if (headers_sent() || empty($settings['debug_headers']) || $status === '') {
+            return;
+        }
+
+        header('X-Atlas-Cache-Dropin: ' . $status);
+        if ($reason !== '') {
+            header('X-Atlas-Cache-Dropin-Reason: ' . $reason);
+        }
+    }
+
+    private function formatDropInLog(string $status, string $reason): string
+    {
+        if ($status === '') {
+            return '';
+        }
+
+        return ' dropin=' . $status . ($reason !== '' ? '/' . $reason : '');
+    }
+
+    private function responseHeader(string $name): string
+    {
+        $needle = strtolower($name) . ':';
+        foreach (headers_list() as $header) {
+            $header = (string) $header;
+            if (strpos(strtolower($header), $needle) === 0) {
+                return trim(substr($header, strlen($needle)));
+            }
+        }
+
+        return '';
     }
 
     /**
