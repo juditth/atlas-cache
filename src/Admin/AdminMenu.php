@@ -250,12 +250,17 @@ final class AdminMenu
     public function queue(): void
     {
         $this->header('Queue');
+        $this->notice();
         $counts = $this->queue->countsByStatus();
+        echo '<div class="atlas-cache-grid">';
         $this->card('Pending items', (string) ($counts['pending'] ?? 0));
         $this->card('Done items', (string) ($counts['done'] ?? 0));
         $this->card('Failed items', (string) ($counts['failed'] ?? 0));
-        echo '<p>The queue contains cache jobs. <strong>revalidate</strong> rebuilds cached HTML without removing the old cache first. <strong>purge</strong> removes cached HTML for the URL.</p>';
+        echo '</div>';
+        echo '<div class="atlas-cache-panel">';
+        $this->renderQueueSummary();
         $this->renderQueueTable();
+        echo '</div>';
         $this->footer();
     }
 
@@ -730,10 +735,12 @@ final class AdminMenu
                 return;
             }
 
-            echo '<p>The queue is empty.</p>';
+            echo '<p><strong>No queue jobs found.</strong></p>';
+            echo '<p class="description">This is expected after <strong>Clear cache files</strong>, because that action deletes stored HTML files immediately and does not create background jobs. Use <strong>Revalidate cache of site</strong> when you want Atlas Cache to create queue jobs.</p>';
             return;
         }
 
+        echo '<div class="atlas-cache-table-wrap">';
         echo '<table class="widefat striped"><thead><tr>';
         echo '<th>URL</th><th>Type</th><th>Status</th><th>Priority</th><th>Attempts</th><th>Available at</th><th>Updated at</th><th>Error</th>';
         echo '</tr></thead><tbody>';
@@ -752,6 +759,17 @@ final class AdminMenu
         }
 
         echo '</tbody></table>';
+        echo '</div>';
+    }
+
+    private function renderQueueSummary(): void
+    {
+        echo '<p>The queue contains background cache jobs. <strong>revalidate</strong> rebuilds cached HTML without removing the old file first. <strong>purge</strong> can appear for page-level purge actions and removes cached HTML for that URL.</p>';
+
+        $diagnostics = get_option('atlas_cache_diagnostics', []);
+        if (is_array($diagnostics) && !empty($diagnostics['last_tool_message'])) {
+            echo '<div class="atlas-cache-info"><strong>Last tool action:</strong> ' . esc_html((string) $diagnostics['last_tool_message']) . '</div>';
+        }
     }
 
     private function currentCacheTargetUrl(): string
