@@ -380,6 +380,10 @@ final class AdminMenu
 
         $this->settings->save($settings);
         $this->runtimeConfigWriter->write();
+
+        if (empty($current['enabled']) && !empty($settings['enabled'])) {
+            $this->queueSitemapRevalidation('Settings enabled cache');
+        }
     }
 
     private function saveRules(): void
@@ -404,11 +408,7 @@ final class AdminMenu
             }
 
             if ($tool === 'queue-revalidate-all') {
-                $urls = $this->collectRefreshUrls();
-                $result = $this->queue->enqueueManyDetailed($urls, 10, 'revalidate');
-                $message = 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
-                $this->logger->log('revalidate', $message);
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
+                $this->queueSitemapRevalidation('Manual sitemap revalidate');
                 return;
             }
 
@@ -448,6 +448,15 @@ final class AdminMenu
     private function collectRefreshUrls(): array
     {
         return $this->sitemapUrlCollector->collect();
+    }
+
+    private function queueSitemapRevalidation(string $source): void
+    {
+        $urls = $this->collectRefreshUrls();
+        $result = $this->queue->enqueueManyDetailed($urls, 10, 'revalidate');
+        $message = 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
+        $this->logger->log('revalidate', $source . ': ' . $message);
+        update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
     }
 
     /**
