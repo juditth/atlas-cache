@@ -159,7 +159,7 @@ final class AdminMenu
         if ($tool === 'revalidate-site') {
             $urls = $this->collectRefreshUrls();
             $created = $this->queue->enqueueMany($urls, 10, 'revalidate');
-            $this->logger->log('revalidate', 'Queued site revalidate from toolbar: ' . $created . ' new / ' . count($urls) . ' total');
+            $this->logger->log('revalidate', 'Queued sitemap revalidate from toolbar: ' . $created . ' new / ' . count($urls) . ' total');
         }
 
         if ($tool === 'purge-all') {
@@ -291,7 +291,7 @@ final class AdminMenu
         $this->notice();
         echo '<form method="post" class="atlas-cache-tools">';
         wp_nonce_field('atlas_cache_tools');
-        $this->toolButton('queue-revalidate-all', 'Revalidate cache of site', 'Queues the homepage and published public content for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
+        $this->toolButton('queue-revalidate-all', 'Revalidate cache of site', 'Queues URLs found in the sitemap for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
         $this->toolButton('run-worker', 'Run worker now', 'Processes pending queue items immediately, using the configured URLs-per-run limit. Revalidate jobs use an internal request.', 'secondary');
         $this->toolButton('enable-wp-cache', 'Enable WP_CACHE', 'Writes a small Atlas Cache marker block into wp-config.php so WordPress loads advanced-cache.php before bootstrapping. Reload the admin after running it.', 'secondary');
         $this->toolButton('rewrite-config', 'Repair fast-cache settings file', 'Usually not needed. Settings are written automatically. Use this only when diagnostics reports a missing or broken advanced-cache.php config file.', 'secondary');
@@ -406,7 +406,7 @@ final class AdminMenu
             if ($tool === 'queue-revalidate-all') {
                 $urls = $this->collectRefreshUrls();
                 $result = $this->queue->enqueueManyDetailed($urls, 10, 'revalidate');
-                $message = 'Revalidate queued: ' . $this->formatQueueResult($result);
+                $message = 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
                 $this->logger->log('revalidate', $message);
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
                 return;
@@ -721,7 +721,7 @@ final class AdminMenu
             }
 
             echo '<p><strong>No queue jobs found.</strong></p>';
-            echo '<p class="description">This is expected after <strong>Clear cache files</strong>, because that action deletes stored HTML files immediately and does not create background jobs. Use <strong>Revalidate cache of site</strong> when you want Atlas Cache to create queue jobs.</p>';
+            echo '<p class="description">This is expected after <strong>Clear cache files</strong>, because that action deletes stored HTML files immediately and does not create background jobs. Use <strong>Revalidate cache of site</strong> when you want Atlas Cache to create queue jobs from sitemap URLs.</p>';
             return;
         }
 
@@ -749,7 +749,7 @@ final class AdminMenu
 
     private function renderQueueSummary(): void
     {
-        echo '<p>The queue contains background cache jobs. <strong>revalidate</strong> rebuilds cached HTML without removing the old file first. <strong>purge</strong> can appear for page-level purge actions and removes cached HTML for that URL.</p>';
+        echo '<p>The queue contains background cache jobs. Site-wide revalidation uses sitemap URLs. <strong>revalidate</strong> rebuilds cached HTML without removing the old file first. <strong>purge</strong> can appear for page-level purge actions and removes cached HTML for that URL.</p>';
 
         $diagnostics = get_option('atlas_cache_diagnostics', []);
         if (is_array($diagnostics) && !empty($diagnostics['last_tool_message'])) {

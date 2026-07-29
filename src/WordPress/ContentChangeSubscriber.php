@@ -45,7 +45,7 @@ final class ContentChangeSubscriber
 
         if ($this->isGlobalPostType($post->post_type)) {
             $count = $this->queue->enqueueMany($this->collectSiteUrls(), 10, 'revalidate', $delay);
-            $this->logger->log('revalidate', 'Global content change queued: post_type=' . $post->post_type . ', urls=' . $count);
+            $this->logger->log('revalidate', 'Global content change queued from sitemap: post_type=' . $post->post_type . ', urls=' . $count);
             return;
         }
 
@@ -65,7 +65,7 @@ final class ContentChangeSubscriber
     public function onGlobalChange(): void
     {
         $count = $this->queue->enqueueMany($this->collectSiteUrls(), 10, 'revalidate', $this->debounceSeconds());
-        $this->logger->log('revalidate', 'Global change queued: urls=' . $count);
+        $this->logger->log('revalidate', 'Global change queued from sitemap: urls=' . $count);
     }
 
     /**
