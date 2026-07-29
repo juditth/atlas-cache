@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AtlasCache\Queue;
 
+use AtlasCache\Database\DatabaseMigrator;
 use wpdb;
 
 final class QueueRepository
@@ -17,30 +18,7 @@ final class QueueRepository
 
     public function install(): void
     {
-        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-
-        $table = $this->table();
-        $charset = $this->wpdb->get_charset_collate();
-
-        dbDelta(
-            "CREATE TABLE {$table} (
-                id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-                url text NOT NULL,
-                cache_key varchar(255) NOT NULL DEFAULT '',
-                mode varchar(20) NOT NULL DEFAULT 'revalidate',
-                priority int(11) NOT NULL DEFAULT 10,
-                status varchar(20) NOT NULL DEFAULT 'pending',
-                attempts int(11) NOT NULL DEFAULT 0,
-                last_error text NULL,
-                available_at datetime NOT NULL,
-                locked_until datetime NULL,
-                created_at datetime NOT NULL,
-                updated_at datetime NOT NULL,
-                PRIMARY KEY  (id),
-                KEY status_priority (status, priority),
-                KEY cache_key (cache_key)
-            ) {$charset};"
-        );
+        (new DatabaseMigrator($this->wpdb))->migrate();
     }
 
     public function countPending(): int

@@ -50,7 +50,7 @@ final class Plugin
     public function register(): void
     {
         $this->settings->ensureDefaults();
-        $this->ensureInstalledVersion();
+        $this->ensureRuntimeState();
 
         add_filter('cron_schedules', [$this, 'cronSchedules']);
         add_action('init', [$this, 'ensureWorkerScheduled']);
@@ -72,14 +72,20 @@ final class Plugin
         });
     }
 
-    private function ensureInstalledVersion(): void
+    private function ensureRuntimeState(): void
     {
+        try {
+            $this->queue->install();
+        } catch (\RuntimeException $exception) {
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
+            $this->logger->log('error', $exception->getMessage());
+        }
+
         $installedVersion = (string) get_option(self::INSTALLED_VERSION_OPTION, '');
         if ($installedVersion === ATLAS_CACHE_VERSION) {
             return;
         }
 
-        $this->queue->install();
         $this->runtimeConfigWriter->write();
         update_option(self::INSTALLED_VERSION_OPTION, ATLAS_CACHE_VERSION, false);
     }

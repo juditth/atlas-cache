@@ -8,6 +8,8 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 
 delete_option('atlas_cache_settings');
 delete_option('atlas_cache_diagnostics');
+delete_option('atlas_cache_db_migrations');
+delete_option('atlas_cache_installed_version');
 
 global $wpdb;
 
