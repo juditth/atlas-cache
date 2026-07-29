@@ -11,6 +11,7 @@ use AtlasCache\DropIn\DropInInstaller;
 use AtlasCache\Queue\QueueRepository;
 use AtlasCache\Queue\QueueWorker;
 use AtlasCache\Storage\CacheStorageInterface;
+use AtlasCache\WordPress\CacheWarmupPriorityResolver;
 use AtlasCache\WordPress\SitemapUrlCollector;
 use AtlasCache\WordPress\WpConfigEditor;
 use RuntimeException;
@@ -24,6 +25,7 @@ final class AdminMenu
     private QueueRepository $queue;
     private QueueWorker $worker;
     private Logger $logger;
+    private CacheWarmupPriorityResolver $priorityResolver;
     private SitemapUrlCollector $sitemapUrlCollector;
     private WpConfigEditor $wpConfigEditor;
 
@@ -35,6 +37,7 @@ final class AdminMenu
         QueueRepository $queue,
         QueueWorker $worker,
         Logger $logger,
+        CacheWarmupPriorityResolver $priorityResolver,
         SitemapUrlCollector $sitemapUrlCollector,
         WpConfigEditor $wpConfigEditor
     ) {
@@ -45,6 +48,7 @@ final class AdminMenu
         $this->queue = $queue;
         $this->worker = $worker;
         $this->logger = $logger;
+        $this->priorityResolver = $priorityResolver;
         $this->sitemapUrlCollector = $sitemapUrlCollector;
         $this->wpConfigEditor = $wpConfigEditor;
     }
@@ -157,9 +161,7 @@ final class AdminMenu
         }
 
         if ($tool === 'revalidate-site') {
-            $urls = $this->collectRefreshUrls();
-            $created = $this->queue->enqueueMany($urls, 10, 'revalidate');
-            $this->logger->log('revalidate', 'Queued sitemap revalidate from toolbar: ' . $created . ' new / ' . count($urls) . ' total');
+            $this->queueSitemapRevalidation('Toolbar sitemap revalidate');
         }
 
         if ($tool === 'purge-all') {
@@ -229,6 +231,7 @@ final class AdminMenu
         $this->number('ttl', 'TTL in seconds', $settings, 60, 31536000, 'After this time cached HTML is considered stale. With stale mode enabled, the old version can still be served while a new one is prepared.');
         $this->checkbox('stale_while_revalidate', 'Stale while revalidate', $settings, false, 'Visitors can keep receiving the last complete cached HTML while revalidation runs in the background.');
         $this->number('worker_batch_size', 'URLs per worker run', $settings, 1, 50, 'How many queued URLs the worker may process in one run.');
+        $this->renderPostTypePriorityTable($settings);
         $this->number('content_change_debounce_minutes', 'Revalidate delay after content changes', $settings, 0, 1440, 'When content is saved repeatedly, Atlas Cache waits this many minutes after the last save before processing the queued revalidation.');
         $this->checkbox('debug_headers', 'Debug HTTP headers', $settings, false, 'The basic X-Atlas-Cache status header is always sent. Enable this to add detailed reason, key and age headers.');
         $this->renderCacheStatusLegend();
@@ -369,6 +372,7 @@ final class AdminMenu
             'frontend_debug_expires_after_days' => (int) ($_POST['frontend_debug_expires_after_days'] ?? $current['frontend_debug_expires_after_days']),
             'debug_log' => !empty($_POST['debug_log']),
             'debug_log_retention_days' => (int) ($_POST['debug_log_retention_days'] ?? $current['debug_log_retention_days']),
+            'post_type_priorities' => $this->postedPostTypePriorities($current['post_type_priorities'] ?? []),
             'excluded_url_patterns' => $this->postedLines('excluded_url_patterns', $current['excluded_url_patterns']),
             'sensitive_cookies' => $this->postedLines('sensitive_cookies', $current['sensitive_cookies']),
             'query_string_whitelist' => $this->postedLines('query_string_whitelist', $current['query_string_whitelist']),
@@ -453,10 +457,38 @@ final class AdminMenu
     private function queueSitemapRevalidation(string $source): void
     {
         $urls = $this->collectRefreshUrls();
-        $result = $this->queue->enqueueManyDetailed($urls, 10, 'revalidate');
+        $result = $this->enqueueRevalidationUrlsWithPriorities($urls);
         $message = 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
         $this->logger->log('revalidate', $source . ': ' . $message);
         update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
+    }
+
+    /**
+     * @param list<string> $urls
+     * @return array{total:int, created:int, requeued:int, updated:int, skipped:int, failed:int}
+     */
+    private function enqueueRevalidationUrlsWithPriorities(array $urls): array
+    {
+        $result = [
+            'total' => count($urls),
+            'created' => 0,
+            'requeued' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+        ];
+        $priorities = $this->priorityResolver->priorities();
+
+        foreach ($urls as $url) {
+            $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities), 'revalidate');
+            if (isset($result[$status])) {
+                $result[$status]++;
+            } else {
+                $result['failed']++;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -473,6 +505,53 @@ final class AdminMenu
         $lines = preg_split('/\R/', $raw) ?: [];
 
         return array_values(array_filter(array_map('trim', $lines), static fn (string $line): bool => $line !== ''));
+    }
+
+    /**
+     * @param mixed $fallback
+     * @return array<string, int>
+     */
+    private function postedPostTypePriorities($fallback): array
+    {
+        $raw = isset($_POST['post_type_priorities']) && is_array($_POST['post_type_priorities'])
+            ? wp_unslash($_POST['post_type_priorities'])
+            : (is_array($fallback) ? $fallback : []);
+        $priorities = [];
+
+        foreach ($this->priorityResolver->postTypes() as $postType) {
+            $name = (string) $postType->name;
+            $priorities[$name] = max(1, min(100, (int) ($raw[$name] ?? $this->priorityResolver->defaultPriority($name))));
+        }
+
+        return $priorities;
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     */
+    private function renderPostTypePriorityTable(array $settings): void
+    {
+        $postTypes = $this->priorityResolver->postTypes();
+        if ($postTypes === []) {
+            return;
+        }
+
+        $priorities = is_array($settings['post_type_priorities'] ?? null) ? $settings['post_type_priorities'] : [];
+
+        echo '<h2>Cache warm-up priority</h2>';
+        echo '<p class="description">Lower numbers run earlier in the queue. Use this to warm important pages before lower-priority blog content.</p>';
+        echo '<table class="widefat striped atlas-cache-priority-table"><thead><tr><th>Content type</th><th>Slug</th><th>Priority</th></tr></thead><tbody>';
+        foreach ($postTypes as $postType) {
+            $name = (string) $postType->name;
+            $label = (string) ($postType->labels->name ?? $name);
+            $priority = (int) ($priorities[$name] ?? $this->priorityResolver->defaultPriority($name));
+            echo '<tr>';
+            echo '<td>' . esc_html($label) . '</td>';
+            echo '<td><code>' . esc_html($name) . '</code></td>';
+            echo '<td><input type="number" class="small-text" name="post_type_priorities[' . esc_attr($name) . ']" value="' . esc_attr((string) $priority) . '" min="1" max="100"></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
     }
 
     /**

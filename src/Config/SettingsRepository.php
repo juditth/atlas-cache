@@ -26,6 +26,10 @@ final class SettingsRepository
             'debug_log' => true,
             'debug_log_retention_days' => 14,
             'refresh_token' => '',
+            'post_type_priorities' => [
+                'page' => 5,
+                'post' => 20,
+            ],
             'excluded_url_patterns' => [
                 '/wp-admin',
                 '/wp-login.php',
@@ -93,6 +97,7 @@ final class SettingsRepository
         $settings['debug_log'] = !empty($settings['debug_log']);
         $settings['debug_log_retention_days'] = max(1, min(365, (int) $settings['debug_log_retention_days']));
         $settings['refresh_token'] = $this->normalizeToken((string) ($settings['refresh_token'] ?? ''));
+        $settings['post_type_priorities'] = $this->normalizePostTypePriorities($settings['post_type_priorities'] ?? []);
         $settings['excluded_url_patterns'] = $this->normalizeStringList($settings['excluded_url_patterns'] ?? []);
         $settings['sensitive_cookies'] = $this->normalizeStringList($settings['sensitive_cookies'] ?? []);
         $settings['query_string_whitelist'] = $this->normalizeStringList($settings['query_string_whitelist'] ?? []);
@@ -141,5 +146,26 @@ final class SettingsRepository
     private function normalizeToken(string $token): string
     {
         return preg_match('/^[a-f0-9]{48}$/', $token) === 1 ? $token : '';
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<string, int>
+     */
+    private function normalizePostTypePriorities($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $priorities = [];
+        foreach ($value as $postType => $priority) {
+            $postType = sanitize_key((string) $postType);
+            if ($postType !== '') {
+                $priorities[$postType] = max(1, min(100, (int) $priority));
+            }
+        }
+
+        return $priorities;
     }
 }

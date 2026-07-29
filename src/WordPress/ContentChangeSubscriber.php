@@ -14,13 +14,21 @@ final class ContentChangeSubscriber
     private SettingsRepository $settings;
     private Logger $logger;
     private SitemapUrlCollector $sitemapUrlCollector;
+    private CacheWarmupPriorityResolver $priorityResolver;
 
-    public function __construct(QueueRepository $queue, SettingsRepository $settings, Logger $logger, SitemapUrlCollector $sitemapUrlCollector)
+    public function __construct(
+        QueueRepository $queue,
+        SettingsRepository $settings,
+        Logger $logger,
+        SitemapUrlCollector $sitemapUrlCollector,
+        CacheWarmupPriorityResolver $priorityResolver
+    )
     {
         $this->queue = $queue;
         $this->settings = $settings;
         $this->logger = $logger;
         $this->sitemapUrlCollector = $sitemapUrlCollector;
+        $this->priorityResolver = $priorityResolver;
     }
 
     public function register(): void
@@ -44,7 +52,7 @@ final class ContentChangeSubscriber
         $delay = $this->debounceSeconds();
 
         if ($this->isGlobalPostType($post->post_type)) {
-            $count = $this->queue->enqueueMany($this->collectSiteUrls(), 10, 'revalidate', $delay);
+            $count = $this->enqueueSiteUrlsWithPriorities($this->collectSiteUrls(), $delay);
             $this->logger->log('revalidate', 'Global content change queued from sitemap: post_type=' . $post->post_type . ', urls=' . $count);
             return;
         }
@@ -58,13 +66,13 @@ final class ContentChangeSubscriber
             return;
         }
 
-        $count = $this->queue->enqueueMany($urls, 5, 'revalidate', $delay);
+        $count = $this->queue->enqueueMany($urls, $this->priorityResolver->priorityForPostType($post->post_type), 'revalidate', $delay);
         $this->logger->log('revalidate', 'Content change queued: post_id=' . $postId . ', post_type=' . $post->post_type . ', urls=' . $count);
     }
 
     public function onGlobalChange(): void
     {
-        $count = $this->queue->enqueueMany($this->collectSiteUrls(), 10, 'revalidate', $this->debounceSeconds());
+        $count = $this->enqueueSiteUrlsWithPriorities($this->collectSiteUrls(), $this->debounceSeconds());
         $this->logger->log('revalidate', 'Global change queued from sitemap: urls=' . $count);
     }
 
@@ -145,5 +153,23 @@ final class ContentChangeSubscriber
         $settings = $this->settings->all();
 
         return (int) $settings['content_change_debounce_minutes'] * MINUTE_IN_SECONDS;
+    }
+
+    /**
+     * @param list<string> $urls
+     */
+    private function enqueueSiteUrlsWithPriorities(array $urls, int $delay): int
+    {
+        $created = 0;
+        $priorities = $this->priorityResolver->priorities();
+
+        foreach ($urls as $url) {
+            $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities), 'revalidate', $delay);
+            if ($status === 'created' || $status === 'requeued') {
+                $created++;
+            }
+        }
+
+        return $created;
     }
 }
