@@ -10,6 +10,8 @@ delete_option('atlas_cache_settings');
 delete_option('atlas_cache_diagnostics');
 delete_option('atlas_cache_db_migrations');
 delete_option('atlas_cache_installed_version');
+delete_option('atlas_cache_wp_config_backup');
+delete_transient('atlas_cache_external_cache_headers');
 
 wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
 wp_clear_scheduled_hook('atlas_cache_process_queue');

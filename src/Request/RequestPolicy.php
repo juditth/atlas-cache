@@ -10,14 +10,19 @@ final class RequestPolicy
      * @param array<string, mixed> $settings
      * @param array<string, string> $server
      * @param array<string, mixed> $cookies
+     * @param list<string> $allowedHosts
      */
-    public function bypassReason(array $settings, array $server, array $cookies, bool $wordpressAdmin = false): ?string
+    public function bypassReason(array $settings, array $server, array $cookies, bool $wordpressAdmin = false, array $allowedHosts = []): ?string
     {
         if (empty($settings['enabled'])) {
             return 'Disabled';
         }
 
-        if ($this->isRefreshRequest($settings)) {
+        if ($allowedHosts !== [] && !$this->hostAllowed((string) ($server['HTTP_HOST'] ?? ''), $allowedHosts)) {
+            return 'HostMismatch';
+        }
+
+        if ($this->isRefreshRequest($settings, $server)) {
             return null;
         }
 
@@ -60,13 +65,27 @@ final class RequestPolicy
 
     /**
      * @param array<string, mixed> $settings
+     * @param array<string, mixed> $server
      */
-    public function isRefreshRequest(array $settings): bool
+    public function isRefreshRequest(array $settings, array $server): bool
     {
         $token = (string) ($settings['refresh_token'] ?? '');
-        $requestToken = isset($_GET['atlas_cache_refresh']) ? (string) wp_unslash($_GET['atlas_cache_refresh']) : '';
+        $requestToken = isset($server['HTTP_X_ATLAS_CACHE_REFRESH_TOKEN'])
+            ? (string) wp_unslash($server['HTTP_X_ATLAS_CACHE_REFRESH_TOKEN'])
+            : '';
 
         return $token !== '' && $requestToken !== '' && hash_equals($token, $requestToken);
+    }
+
+    /**
+     * @param list<string> $allowedHosts
+     */
+    private function hostAllowed(string $host, array $allowedHosts): bool
+    {
+        $host = strtolower($host);
+        $host = preg_replace('/:\d+$/', '', $host) ?? $host;
+
+        return in_array($host, $allowedHosts, true);
     }
 
     /**

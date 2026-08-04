@@ -65,7 +65,7 @@ final class PageCacheMiddleware
         }
 
         $settings = $this->settings->all();
-        $reason = $this->requestPolicy->bypassReason($settings, $_SERVER, $_COOKIE, false);
+        $reason = $this->requestPolicy->bypassReason($settings, $_SERVER, $_COOKIE, false, $this->allowedHosts());
         if ($reason !== null) {
             $this->debugHeader('BYPASS', $reason);
             $this->maybeLog('bypass', $reason . ' ' . $this->currentUri());
@@ -136,6 +136,30 @@ final class PageCacheMiddleware
         }
 
         return $html;
+    }
+
+    /**
+     * Hosts the cache is allowed to key entries under. Matches RuntimeConfigWriter's
+     * allowed_hosts so the buffered/write path and the advanced-cache.php read path treat
+     * an unrecognised Host header the same way.
+     *
+     * @return list<string>
+     */
+    private function allowedHosts(): array
+    {
+        $hosts = [
+            $this->hostFromUrl(home_url('/')),
+            $this->hostFromUrl(site_url('/')),
+        ];
+
+        return array_values(array_unique(array_filter($hosts, static fn (string $host): bool => $host !== '')));
+    }
+
+    private function hostFromUrl(string $url): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return is_string($host) ? strtolower($host) : '';
     }
 
     private function statusCode(): int

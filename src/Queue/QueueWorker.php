@@ -64,13 +64,12 @@ final class QueueWorker
                 continue;
             }
 
-            $refreshUrl = add_query_arg('atlas_cache_refresh', $token, $url);
-
-            $response = wp_remote_get($refreshUrl, [
+            $response = wp_remote_get($url, [
                 'timeout' => 20,
                 'redirection' => 0,
                 'headers' => [
                     'X-Atlas-Cache-Refresh' => '1',
+                    'X-Atlas-Cache-Refresh-Token' => $token,
                     'Cache-Control' => 'no-cache',
                 ],
                 'cookies' => [],

@@ -708,6 +708,22 @@ final class AdminMenu
      */
     private function detectExternalCacheHeaders(): array
     {
+        $cached = get_transient('atlas_cache_external_cache_headers');
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $detected = $this->fetchExternalCacheHeaders();
+        set_transient('atlas_cache_external_cache_headers', $detected, 5 * MINUTE_IN_SECONDS);
+
+        return $detected;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function fetchExternalCacheHeaders(): array
+    {
         $response = wp_remote_head(home_url('/'), [
             'timeout' => 5,
             'redirection' => 0,

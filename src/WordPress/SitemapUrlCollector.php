@@ -80,6 +80,13 @@ final class SitemapUrlCollector
         if ($root === 'sitemapindex') {
             $urls = [];
             foreach ($this->locations($xml, 'sitemap') as $location) {
+                // A fetched sitemap is not fully trusted content: only follow nested sitemap
+                // index entries that point back at this site, so a compromised/foreign feed
+                // cannot make the site fetch arbitrary external URLs.
+                if (!$this->isSameHost($location)) {
+                    continue;
+                }
+
                 $urls = array_merge($urls, $this->collectFromSitemap($location, $visited, $depth + 1));
                 if (count($urls) >= self::MAX_URLS) {
                     break;
@@ -129,6 +136,19 @@ final class SitemapUrlCollector
 
         $scheme = strtolower((string) ($parts['scheme'] ?? ''));
         if ($scheme !== 'http' && $scheme !== 'https') {
+            return false;
+        }
+
+        $homeHost = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return $homeHost !== '' && $host === $homeHost;
+    }
+
+    private function isSameHost(string $url): bool
+    {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts)) {
             return false;
         }
 

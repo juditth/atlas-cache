@@ -24,6 +24,11 @@ if (!is_array($atlasCacheConfig) || empty($atlasCacheConfig['enabled'])) {
     return;
 }
 
+if (!atlas_cache_dropin_host_allowed($atlasCacheConfig, $_SERVER)) {
+    atlas_cache_dropin_debug_headers($atlasCacheConfig, 'BYPASS', 'HostMismatch', '');
+    return;
+}
+
 if (atlas_cache_dropin_is_refresh_request($atlasCacheConfig, $_SERVER)) {
     atlas_cache_dropin_debug_headers($atlasCacheConfig, 'BYPASS', 'Revalidate', '');
     return;
@@ -162,15 +167,28 @@ function atlas_cache_dropin_is_refresh_request(array $config, array $server): bo
         return false;
     }
 
-    $queryString = (string) ($server['QUERY_STRING'] ?? '');
-    if ($queryString === '') {
-        return false;
-    }
-
-    parse_str($queryString, $query);
-    $requestToken = isset($query['atlas_cache_refresh']) ? (string) $query['atlas_cache_refresh'] : '';
+    $requestToken = (string) ($server['HTTP_X_ATLAS_CACHE_REFRESH_TOKEN'] ?? '');
 
     return $requestToken !== '' && hash_equals($token, $requestToken);
+}
+
+/**
+ * Requests for a Host the site does not actually own are bypassed instead of being cached,
+ * so a spoofed Host header cannot be used to grow the cache store without bound.
+ *
+ * @param array<string, mixed> $config
+ * @param array<string, mixed> $server
+ */
+function atlas_cache_dropin_host_allowed(array $config, array $server): bool
+{
+    $allowed = $config['allowed_hosts'] ?? [];
+    if (!is_array($allowed) || $allowed === []) {
+        return true;
+    }
+
+    $host = atlas_cache_dropin_sanitize_host((string) ($server['HTTP_HOST'] ?? ''));
+
+    return in_array($host, $allowed, true);
 }
 
 /**

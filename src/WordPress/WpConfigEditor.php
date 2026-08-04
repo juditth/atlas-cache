@@ -23,12 +23,12 @@ final class WpConfigEditor
             throw new RuntimeException('wp-config.php is not writable. Enable WP_CACHE manually or adjust file permissions.');
         }
 
-        $contents = file_get_contents($path);
-        if (!is_string($contents)) {
+        $originalContents = file_get_contents($path);
+        if (!is_string($originalContents)) {
             throw new RuntimeException('Cannot read wp-config.php.');
         }
 
-        [$contents, $originalFromMarker] = $this->removeAtlasMarker($contents);
+        [$contents, $originalFromMarker] = $this->removeAtlasMarker($originalContents);
         $bootstrapPosition = $this->bootstrapPosition($contents);
 
         $pattern = '/^[ \t]*define\s*\(\s*([\'"])WP_CACHE\1\s*,\s*(true|false|0|1)\s*\)\s*;\s*$/mi';
@@ -42,6 +42,7 @@ final class WpConfigEditor
 
             $contents = substr_replace($contents, '', $linePosition, strlen($line));
             $contents = $this->insertBeforeBootstrap($contents, $this->markerBlock($line));
+            $this->backup($originalContents);
             $this->write($path, $contents);
             $this->assertEffectiveMarker($contents);
             return;
@@ -52,8 +53,27 @@ final class WpConfigEditor
         }
 
         $contents = $this->insertBeforeBootstrap($contents, $this->markerBlock($originalFromMarker));
+        $this->backup($originalContents);
         $this->write($path, $contents);
         $this->assertEffectiveMarker($contents);
+    }
+
+    /**
+     * Saves the pre-edit file content so a broken automated edit can be recovered. This is
+     * stored in the options table (admin-only, DB-only access) rather than as a sibling file
+     * next to wp-config.php, because a predictably-named wp-config.php.bak on disk would be
+     * served as plain text by most webservers and leak DB credentials and secret keys.
+     */
+    private function backup(string $originalContents): void
+    {
+        if ($originalContents === '') {
+            return;
+        }
+
+        update_option('atlas_cache_wp_config_backup', [
+            'content' => base64_encode($originalContents),
+            'created_at' => time(),
+        ], false);
     }
 
     public function configPath(): string
