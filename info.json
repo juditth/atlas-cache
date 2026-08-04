@@ -1,15 +1,15 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.12",
-  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.12.zip",
+  "version": "0.1.13",
+  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.13.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
   "requires_php": "8.0",
-  "last_updated": "2026-07-29 00:00:00",
+  "last_updated": "2026-08-04 00:00:00",
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "0.1.12: Add cache warm-up priorities for taxonomy archive URLs."
+    "changelog": "0.1.13: Security hardening - Host header allow-list, wp-config.php backup, header-based refresh token, same-site sitemap index following."
   }
 }

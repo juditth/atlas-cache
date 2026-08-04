@@ -4,7 +4,7 @@ Tags: cache, page cache, html cache, performance, advanced-cache
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 0.1.12
+Stable tag: 0.1.13
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,14 @@ No. Common WooCommerce cart, checkout, account and session cookies are bypassed 
 No. Atlas Cache is only an HTML page cache.
 
 == Changelog ==
+
+= 0.1.13 =
+
+* Security: bypass cache instead of storing/serving a page when the Host header does not match a known site domain, preventing unbounded cache growth from spoofed Host requests.
+* Security: send the internal cache-refresh token in a request header instead of a URL query parameter, so it is not exposed in access logs.
+* Security: back up wp-config.php content to the options table (not a public file) before the automatic WP_CACHE edit.
+* Security: only follow same-site nested sitemap index entries when collecting URLs for revalidation.
+* Cache external cache-header diagnostics for 5 minutes instead of checking on every Diagnostics page load.
 
 = 0.1.12 =
 
