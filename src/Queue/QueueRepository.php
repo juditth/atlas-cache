@@ -28,6 +28,23 @@ final class QueueRepository
         return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'pending'");
     }
 
+    public function clearAll(): int
+    {
+        return (int) $this->wpdb->query("DELETE FROM {$this->table()}");
+    }
+
+    public function cleanupFinished(int $retentionDays): int
+    {
+        $threshold = gmdate('Y-m-d H:i:s', time() - (max(1, $retentionDays) * DAY_IN_SECONDS));
+
+        return (int) $this->wpdb->query(
+            $this->wpdb->prepare(
+                "DELETE FROM {$this->table()} WHERE status IN ('done', 'failed') AND updated_at < %s",
+                $threshold
+            )
+        );
+    }
+
     /**
      * @return array<string, mixed>|null
      */

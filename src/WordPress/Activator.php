@@ -32,6 +32,7 @@ final class Activator
         $storage = new FileCacheStorage($paths);
         $runtimeConfigWriter = new RuntimeConfigWriter($paths, $settings);
         $dropInInstaller = new DropInInstaller(ATLAS_CACHE_DIR . 'bin/advanced-cache.php', WP_CONTENT_DIR . '/advanced-cache.php');
+        $wpConfigEditor = new WpConfigEditor();
         $queue = new QueueRepository($GLOBALS['wpdb']);
         $logger = new Logger($paths);
         $wpCacheError = '';
@@ -41,14 +42,22 @@ final class Activator
             $storage->ensureBaseDirectories();
             $queue->install();
             $runtimeConfigWriter->write();
-            $dropInInstaller->install();
-            try {
-                (new WpConfigEditor())->enableCache();
-            } catch (RuntimeException $exception) {
-                $wpCacheError = $exception->getMessage();
-                $logger->log('error', 'WP_CACHE enable failed: ' . $wpCacheError);
+            if ($settings->isEnabled()) {
+                $dropInInstaller->install();
+                try {
+                    $wpConfigEditor->enableCache();
+                } catch (RuntimeException $exception) {
+                    $wpCacheError = $exception->getMessage();
+                    $logger->log('error', 'WP_CACHE enable failed: ' . $wpCacheError);
+                }
+            } else {
+                $dropInInstaller->uninstall();
+                (new HtaccessBrowserCacheRules())->uninstall();
+                $wpConfigEditor->disableCache();
+                $queue->clearAll();
+                wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
+                wp_clear_scheduled_hook('atlas_cache_process_queue');
             }
-            self::scheduleCleanup();
             update_option('atlas_cache_installed_version', ATLAS_CACHE_VERSION, false);
             update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => $wpCacheError], false);
         } catch (RuntimeException $exception) {
@@ -61,28 +70,39 @@ final class Activator
     {
         $paths = PluginFactory::paths();
         $settings = new SettingsRepository();
+        $queue = new QueueRepository($GLOBALS['wpdb']);
+        $dropInInstaller = new DropInInstaller(ATLAS_CACHE_DIR . 'bin/advanced-cache.php', WP_CONTENT_DIR . '/advanced-cache.php');
         $current = $settings->all();
         $current['enabled'] = false;
         $settings->save($current);
 
-        (new RuntimeConfigWriter($paths, $settings))->write();
-        (new DropInInstaller(ATLAS_CACHE_DIR . 'bin/advanced-cache.php', WP_CONTENT_DIR . '/advanced-cache.php'))->uninstall();
-
-        $timestamp = wp_next_scheduled('atlas_cache_cleanup_logs');
-        if (is_int($timestamp)) {
-            wp_unschedule_event($timestamp, 'atlas_cache_cleanup_logs');
+        try {
+            (new RuntimeConfigWriter($paths, $settings))->write();
+        } catch (RuntimeException $exception) {
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
         }
 
-        $workerTimestamp = wp_next_scheduled('atlas_cache_process_queue');
-        if (is_int($workerTimestamp)) {
-            wp_unschedule_event($workerTimestamp, 'atlas_cache_process_queue');
+        try {
+            $dropInInstaller->uninstall();
+        } catch (RuntimeException $exception) {
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
         }
-    }
 
-    private static function scheduleCleanup(): void
-    {
-        if (!wp_next_scheduled('atlas_cache_cleanup_logs')) {
-            wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'atlas_cache_cleanup_logs');
+        try {
+            (new HtaccessBrowserCacheRules())->uninstall();
+        } catch (RuntimeException $exception) {
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
         }
+
+        try {
+            (new WpConfigEditor())->disableCache();
+        } catch (RuntimeException $exception) {
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
+        }
+
+        $queue->clearAll();
+        wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
+        wp_clear_scheduled_hook('atlas_cache_process_queue');
+        wp_clear_scheduled_hook('puc_cron_check_updates-atlas-cache');
     }
 }

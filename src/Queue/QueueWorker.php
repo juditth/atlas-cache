@@ -37,6 +37,14 @@ final class QueueWorker
      */
     public function run(?int $limit = null): array
     {
+        if (!$this->settings->isEnabled()) {
+            return [
+                'processed' => 0,
+                'done' => 0,
+                'failed' => 0,
+            ];
+        }
+
         $settings = $this->settings->all();
         $token = $this->settings->ensureRefreshToken();
         $limit = $limit ?? (int) $settings['worker_batch_size'];

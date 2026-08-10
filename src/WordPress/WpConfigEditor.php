@@ -19,19 +19,28 @@ final class WpConfigEditor
     public function enableCache(): void
     {
         $path = $this->configPath();
-        if (!is_writable($path)) {
-            throw new RuntimeException('wp-config.php is not writable. Enable WP_CACHE manually or adjust file permissions.');
-        }
-
         $originalContents = file_get_contents($path);
         if (!is_string($originalContents)) {
             throw new RuntimeException('Cannot read wp-config.php.');
         }
 
+        $pattern = '/^[ \t]*define\s*\(\s*([\'"])WP_CACHE\1\s*,\s*(true|false|0|1)\s*\)\s*;\s*$/mi';
+        $originalBootstrapPosition = $this->bootstrapPosition($originalContents);
+        if (preg_match($pattern, $originalContents, $originalMatches, PREG_OFFSET_CAPTURE) === 1) {
+            $originalValue = strtolower((string) $originalMatches[2][0]);
+            $originalLinePosition = (int) $originalMatches[0][1];
+            if (($originalValue === 'true' || $originalValue === '1') && ($originalBootstrapPosition === null || $originalLinePosition < $originalBootstrapPosition)) {
+                return;
+            }
+        }
+
+        if (!is_writable($path)) {
+            throw new RuntimeException('wp-config.php is not writable. Enable WP_CACHE manually or adjust file permissions.');
+        }
+
         [$contents, $originalFromMarker] = $this->removeAtlasMarker($originalContents);
         $bootstrapPosition = $this->bootstrapPosition($contents);
 
-        $pattern = '/^[ \t]*define\s*\(\s*([\'"])WP_CACHE\1\s*,\s*(true|false|0|1)\s*\)\s*;\s*$/mi';
         if (preg_match($pattern, $contents, $matches, PREG_OFFSET_CAPTURE) === 1) {
             $line = (string) $matches[0][0];
             $value = strtolower((string) $matches[2][0]);
@@ -56,6 +65,29 @@ final class WpConfigEditor
         $this->backup($originalContents);
         $this->write($path, $contents);
         $this->assertEffectiveMarker($contents);
+    }
+
+    public function disableCache(): void
+    {
+        $path = $this->configPath();
+        $contents = file_get_contents($path);
+        if (!is_string($contents)) {
+            throw new RuntimeException('Cannot read wp-config.php.');
+        }
+
+        if (strpos($contents, self::START_MARKER) === false) {
+            return;
+        }
+
+        if (!is_writable($path)) {
+            throw new RuntimeException('wp-config.php is not writable. Atlas Cache cannot restore its WP_CACHE change.');
+        }
+
+        [$contents, $originalLine] = $this->removeAtlasMarker($contents);
+        if ($originalLine !== '') {
+            $contents = $this->insertBeforeBootstrap($contents, $originalLine);
+        }
+        $this->write($path, $contents);
     }
 
     /**

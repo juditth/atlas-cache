@@ -21,7 +21,9 @@ final class RuntimeConfigWriter
     public function write(): void
     {
         $settings = $this->settings->all();
-        $refreshToken = $this->settings->ensureRefreshToken();
+        $refreshToken = !empty($settings['enabled'])
+            ? $this->settings->ensureRefreshToken()
+            : (string) $settings['refresh_token'];
         $config = [
             'enabled' => (bool) $settings['enabled'],
             'cache_root' => $this->paths->root(),

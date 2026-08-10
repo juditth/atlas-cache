@@ -95,7 +95,8 @@ final class AdminMenu
             'href' => admin_url('admin.php?page=atlas-cache'),
         ]);
 
-        $currentUrl = $this->currentCacheTargetUrl();
+        $cacheEnabled = $this->settings->isEnabled();
+        $currentUrl = $cacheEnabled ? $this->currentCacheTargetUrl() : '';
         if ($currentUrl !== '') {
             $adminBar->add_node([
                 'id' => 'atlas-cache-revalidate-page',
@@ -111,12 +112,14 @@ final class AdminMenu
             ]);
         }
 
-        $adminBar->add_node([
-            'id' => 'atlas-cache-revalidate-site',
-            'parent' => 'atlas-cache',
-            'title' => 'Revalidate site',
-            'href' => $this->toolbarActionUrl('revalidate-site', '', $this->currentRequestUrl()),
-        ]);
+        if ($cacheEnabled) {
+            $adminBar->add_node([
+                'id' => 'atlas-cache-revalidate-site',
+                'parent' => 'atlas-cache',
+                'title' => 'Revalidate site',
+                'href' => $this->toolbarActionUrl('revalidate-site', '', $this->currentRequestUrl()),
+            ]);
+        }
         $adminBar->add_node([
             'id' => 'atlas-cache-purge-all',
             'parent' => 'atlas-cache',
@@ -154,12 +157,12 @@ final class AdminMenu
             $url = '';
         }
 
-        if ($url !== '' && $tool === 'revalidate-page') {
+        if ($url !== '' && $tool === 'revalidate-page' && $this->settings->isEnabled()) {
             $this->queue->enqueueUrl($url, 1, 'revalidate');
             $this->logger->log('revalidate', 'Queued page revalidate: ' . $url);
         }
 
-        if ($url !== '' && $tool === 'purge-page') {
+        if ($url !== '' && $tool === 'purge-page' && $this->settings->isEnabled()) {
             $this->queue->enqueueUrl($url, 1, 'purge');
             $this->logger->log('purge', 'Queued page purge: ' . $url);
         }
@@ -214,7 +217,7 @@ final class AdminMenu
         $this->notice();
         echo '<div class="atlas-cache-grid">';
         $this->card('Cache', !empty($settings['enabled']) ? 'Enabled' : 'Disabled');
-        $this->card('Drop-in', $this->dropInInstaller->isOwnedByAtlas() ? 'Atlas Cache drop-in is active' : 'Missing or owned by another plugin');
+        $this->card('Drop-in', $this->dropInStatus());
         $this->card('WP_CACHE', (defined('WP_CACHE') && WP_CACHE) ? 'Enabled' : 'Disabled');
         $this->card('Cache size', esc_html(size_format((int) $stats['size'])));
         $this->card('Cache files', (string) (int) $stats['files']);
@@ -231,10 +234,11 @@ final class AdminMenu
         echo '<form method="post" class="atlas-cache-panel atlas-cache-form">';
         wp_nonce_field('atlas_cache_save_settings');
         echo '<input type="hidden" name="atlas_cache_save_settings" value="1">';
-        $this->mainCheckbox('enabled', 'Enable cache', $settings, 'Master switch for Atlas Cache. When off, Atlas Cache does not serve existing HTML cache files and does not store new ones.');
+        $this->mainCheckbox('enabled', 'Enable cache', $settings, 'Master switch for Atlas Cache. When off, Atlas Cache does not serve or store HTML, enqueue cache jobs, or run the queue worker.');
         $this->number('ttl', 'TTL in seconds', $settings, 60, 31536000, 'After this time cached HTML is considered stale. With stale mode enabled, the old version can still be served while a new one is prepared.');
         $this->checkbox('stale_while_revalidate', 'Stale while revalidate', $settings, false, 'Visitors can keep receiving the last complete cached HTML while revalidation runs in the background.');
         $this->number('worker_batch_size', 'URLs per worker run', $settings, 1, 50, 'How many queued URLs the worker may process in one run.');
+        $this->number('queue_retention_days', 'Delete completed queue items after days', $settings, 1, 365, 'Done and failed queue history is removed during scheduled cleanup. Disabling cache clears the entire queue immediately.');
         $this->renderPostTypePriorityTable($settings);
         $this->number('content_change_debounce_minutes', 'Revalidate delay after content changes', $settings, 0, 1440, 'When content is saved repeatedly, Atlas Cache waits this many minutes after the last save before processing the queued revalidation.');
         $this->checkbox('debug_headers', 'Debug HTTP headers', $settings, false, 'The basic X-Atlas-Cache status header is always sent. Enable this to add detailed reason, key and age headers.');
@@ -320,7 +324,7 @@ final class AdminMenu
         echo '<table class="widefat striped"><tbody>';
         $this->row('WP_CACHE', (defined('WP_CACHE') && WP_CACHE) ? 'Enabled' : 'Disabled - WordPress will not load the drop-in until WP_CACHE is true.');
         $this->row('wp-config.php', $this->wpConfigStatus());
-        $this->row('advanced-cache.php', $this->dropInInstaller->exists() ? 'Exists' : 'Missing');
+        $this->row('advanced-cache.php', $this->dropInStatus());
         $this->row('Drop-in owner', $this->dropInInstaller->isOwnedByAtlas() ? 'Atlas Cache' : 'Another plugin or unknown');
         $this->row('.htaccess browser cache', $this->htaccessRules->status());
         $this->row('Cache directory', is_writable(WP_CONTENT_DIR . '/cache/atlas-cache') ? 'Writable' : 'Not writable');
@@ -372,6 +376,7 @@ final class AdminMenu
             'ttl' => (int) ($_POST['ttl'] ?? $current['ttl']),
             'stale_while_revalidate' => !empty($_POST['stale_while_revalidate']),
             'worker_batch_size' => (int) ($_POST['worker_batch_size'] ?? $current['worker_batch_size']),
+            'queue_retention_days' => (int) ($_POST['queue_retention_days'] ?? $current['queue_retention_days']),
             'content_change_debounce_minutes' => (int) ($_POST['content_change_debounce_minutes'] ?? $current['content_change_debounce_minutes']),
             'debug_headers' => !empty($_POST['debug_headers']),
             'frontend_debug_enabled' => $frontendDebugEnabled,
@@ -379,6 +384,7 @@ final class AdminMenu
             'frontend_debug_expires_after_days' => (int) ($_POST['frontend_debug_expires_after_days'] ?? $current['frontend_debug_expires_after_days']),
             'debug_log' => !empty($_POST['debug_log']),
             'debug_log_retention_days' => (int) ($_POST['debug_log_retention_days'] ?? $current['debug_log_retention_days']),
+            'refresh_token' => (string) $current['refresh_token'],
             'post_type_priorities' => $this->postedPostTypePriorities($current['post_type_priorities'] ?? []),
             'taxonomy_priorities' => $this->postedTaxonomyPriorities($current['taxonomy_priorities'] ?? []),
             'excluded_url_patterns' => $this->postedLines('excluded_url_patterns', $current['excluded_url_patterns']),
@@ -391,9 +397,9 @@ final class AdminMenu
         }
 
         $this->settings->save($settings);
-        $this->runtimeConfigWriter->write();
+        $savedSettings = $this->settings->all();
 
-        if (empty($current['enabled']) && !empty($settings['enabled'])) {
+        if (empty($current['enabled']) && !empty($savedSettings['enabled'])) {
             $this->queueSitemapRevalidation('Settings enabled cache');
         }
     }
@@ -406,7 +412,6 @@ final class AdminMenu
         $settings['query_string_whitelist'] = $this->postedLines('query_string_whitelist', $settings['query_string_whitelist']);
 
         $this->settings->save($settings);
-        $this->runtimeConfigWriter->write();
     }
 
     private function runTool(string $tool): void
@@ -425,6 +430,11 @@ final class AdminMenu
             }
 
             if ($tool === 'run-worker') {
+                if (!$this->dropInInstaller->isCurrent()) {
+                    update_option('atlas_cache_diagnostics', ['last_error' => 'Atlas Cache drop-in is missing or outdated.', 'last_tool_message' => 'Worker was not started because the Atlas Cache drop-in is missing or outdated.'], false);
+                    return;
+                }
+
                 $result = $this->worker->run();
                 $message = 'Worker run completed: processed=' . $result['processed'] . ', done=' . $result['done'] . ', failed=' . $result['failed'] . '.';
                 $this->logger->log('revalidate', $message);
@@ -433,6 +443,11 @@ final class AdminMenu
             }
 
             if ($tool === 'enable-wp-cache') {
+                if (!$this->settings->isEnabled()) {
+                    update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache is disabled. Enable the Atlas Cache master switch first.'], false);
+                    return;
+                }
+
                 $this->wpConfigEditor->enableCache();
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'WP_CACHE was enabled in wp-config.php. Reload WordPress admin for the status card to update.'], false);
                 return;
@@ -457,6 +472,11 @@ final class AdminMenu
             }
 
             if ($tool === 'install-dropin') {
+                if (!$this->settings->isEnabled()) {
+                    update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache is disabled. No drop-in was installed.'], false);
+                    return;
+                }
+
                 $this->runtimeConfigWriter->write();
                 $this->dropInInstaller->install();
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Drop-in was reinstalled and fast-cache settings file was rewritten.'], false);
@@ -476,6 +496,12 @@ final class AdminMenu
 
     private function queueSitemapRevalidation(string $source): void
     {
+        if (!$this->settings->isEnabled()) {
+            $message = 'Cache is disabled. No revalidation was queued.';
+            update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => $message], false);
+            return;
+        }
+
         $urls = $this->collectRefreshUrls();
         $result = $this->enqueueRevalidationUrlsWithPriorities($urls);
         $message = 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
@@ -669,6 +695,25 @@ final class AdminMenu
         }
 
         return 'Configured: ' . $url;
+    }
+
+    private function dropInStatus(): string
+    {
+        if (!$this->settings->isEnabled() && !$this->dropInInstaller->exists()) {
+            return 'Not installed because cache is disabled';
+        }
+
+        if ($this->dropInInstaller->isCurrent()) {
+            return 'Current Atlas Cache drop-in is active';
+        }
+
+        if ($this->dropInInstaller->isOwnedByAtlas()) {
+            return 'Outdated Atlas Cache drop-in - runtime repair required';
+        }
+
+        return $this->dropInInstaller->exists()
+            ? 'Owned by another plugin'
+            : 'Missing';
     }
 
     /**

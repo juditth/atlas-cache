@@ -18,6 +18,7 @@ final class SettingsRepository
             'ttl' => 86400,
             'stale_while_revalidate' => true,
             'worker_batch_size' => 4,
+            'queue_retention_days' => 14,
             'content_change_debounce_minutes' => 10,
             'debug_headers' => true,
             'frontend_debug_enabled' => false,
@@ -83,6 +84,13 @@ final class SettingsRepository
         }
     }
 
+    public function isEnabled(): bool
+    {
+        $settings = $this->all();
+
+        return !empty($settings['enabled']);
+    }
+
     /**
      * @param array<string, mixed> $settings
      * @return array<string, mixed>
@@ -93,6 +101,7 @@ final class SettingsRepository
         $settings['ttl'] = max(60, (int) $settings['ttl']);
         $settings['stale_while_revalidate'] = !empty($settings['stale_while_revalidate']);
         $settings['worker_batch_size'] = max(1, min(50, (int) $settings['worker_batch_size']));
+        $settings['queue_retention_days'] = max(1, min(365, (int) $settings['queue_retention_days']));
         $settings['content_change_debounce_minutes'] = max(0, min(1440, (int) $settings['content_change_debounce_minutes']));
         $settings['debug_headers'] = !empty($settings['debug_headers']);
         $settings['frontend_debug_enabled'] = !empty($settings['frontend_debug_enabled']);

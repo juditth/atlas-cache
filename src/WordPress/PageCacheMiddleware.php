@@ -44,6 +44,10 @@ final class PageCacheMiddleware
 
     public function maybeStartBuffer(): void
     {
+        if (!$this->settings->isEnabled()) {
+            return;
+        }
+
         if ($this->bufferStarted || is_admin() || wp_doing_ajax() || wp_is_json_request()) {
             return;
         }

@@ -40,8 +40,24 @@ final class DropInInstaller
     public function uninstall(): void
     {
         if (is_file($this->target) && $this->isOwnedByAtlas()) {
-            @unlink($this->target);
+            if (!unlink($this->target)) {
+                throw new RuntimeException('Nelze odstranit Atlas Cache advanced-cache.php z wp-content.');
+            }
         }
+    }
+
+    public function isCurrent(): bool
+    {
+        if (!$this->isOwnedByAtlas() || !is_file($this->source)) {
+            return false;
+        }
+
+        $sourceHash = hash_file('sha256', $this->source);
+        $targetHash = hash_file('sha256', $this->target);
+
+        return is_string($sourceHash)
+            && is_string($targetHash)
+            && hash_equals($sourceHash, $targetHash);
     }
 
     public function exists(): bool

@@ -41,6 +41,10 @@ final class ContentChangeSubscriber
 
     public function onSavePost(int $postId, \WP_Post $post, bool $update): void
     {
+        if (!$this->settings->isEnabled()) {
+            return;
+        }
+
         if (wp_is_post_revision($postId) || wp_is_post_autosave($postId)) {
             return;
         }
@@ -72,6 +76,10 @@ final class ContentChangeSubscriber
 
     public function onGlobalChange(): void
     {
+        if (!$this->settings->isEnabled()) {
+            return;
+        }
+
         $count = $this->enqueueSiteUrlsWithPriorities($this->collectSiteUrls(), $this->debounceSeconds());
         $this->logger->log('revalidate', 'Global change queued from sitemap: urls=' . $count);
     }
