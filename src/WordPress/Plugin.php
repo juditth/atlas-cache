@@ -15,6 +15,9 @@ use AtlasCache\Queue\QueueWorker;
 final class Plugin
 {
     private const INSTALLED_VERSION_OPTION = 'atlas_cache_installed_version';
+    private const BROWSER_RULES_VERSION_OPTION = 'atlas_cache_browser_rules_version';
+    private const SCHEDULED_REVALIDATION_DAYS_OPTION = 'atlas_cache_scheduled_revalidation_days';
+    private const FINISHED_QUEUE_RETENTION_DAYS = 14;
 
     private SettingsRepository $settings;
     private PageCacheMiddleware $middleware;
@@ -22,11 +25,14 @@ final class Plugin
     private RuntimeConfigWriter $runtimeConfigWriter;
     private DropInInstaller $dropInInstaller;
     private HtaccessBrowserCacheRules $htaccessRules;
+    private CompressionProbe $compressionProbe;
     private WpConfigEditor $wpConfigEditor;
     private Logger $logger;
     private QueueRepository $queue;
     private QueueWorker $worker;
     private ContentChangeSubscriber $contentChangeSubscriber;
+    private SitemapUrlCollector $sitemapUrlCollector;
+    private CacheWarmupPriorityResolver $priorityResolver;
     private SelfHostedUpdater $updater;
 
     public function __construct(
@@ -41,7 +47,10 @@ final class Plugin
         QueueRepository $queue,
         QueueWorker $worker,
         ContentChangeSubscriber $contentChangeSubscriber,
-        SelfHostedUpdater $updater
+        SitemapUrlCollector $sitemapUrlCollector,
+        CacheWarmupPriorityResolver $priorityResolver,
+        SelfHostedUpdater $updater,
+        CompressionProbe $compressionProbe
     ) {
         $this->settings = $settings;
         $this->middleware = $middleware;
@@ -49,11 +58,14 @@ final class Plugin
         $this->runtimeConfigWriter = $runtimeConfigWriter;
         $this->dropInInstaller = $dropInInstaller;
         $this->htaccessRules = $htaccessRules;
+        $this->compressionProbe = $compressionProbe;
         $this->wpConfigEditor = $wpConfigEditor;
         $this->logger = $logger;
         $this->queue = $queue;
         $this->worker = $worker;
         $this->contentChangeSubscriber = $contentChangeSubscriber;
+        $this->sitemapUrlCollector = $sitemapUrlCollector;
+        $this->priorityResolver = $priorityResolver;
         $this->updater = $updater;
     }
 
@@ -67,12 +79,14 @@ final class Plugin
         add_action('template_redirect', [$this->middleware, 'maybeStartBuffer'], 0);
         add_action('shutdown', [$this->middleware, 'shutdown'], 0);
         add_action('admin_menu', [$this->adminMenu, 'register']);
+        add_action('admin_init', [$this, 'migrateBrowserRules']);
         add_action('admin_enqueue_scripts', [$this->adminMenu, 'enqueueAssets']);
         add_action('admin_init', [$this->adminMenu, 'handleActions']);
         add_action('admin_bar_menu', [$this->adminMenu, 'registerAdminBar'], 90);
         add_action('admin_post_atlas_cache_toolbar', [$this->adminMenu, 'handleToolbarAction']);
         add_filter('plugin_action_links_' . plugin_basename(ATLAS_CACHE_FILE), [$this, 'pluginActionLinks']);
         add_action('atlas_cache_process_queue', [$this, 'processQueue']);
+        add_action('atlas_cache_revalidate_site', [$this, 'revalidateSite']);
         add_action('atlas_cache_cleanup_logs', [$this, 'cleanupLogs']);
         $this->contentChangeSubscriber->register();
         $this->updater->register();
@@ -104,6 +118,25 @@ final class Plugin
         }
     }
 
+    public function migrateBrowserRules(): void
+    {
+        if (!current_user_can('manage_options') || (int) get_option(self::BROWSER_RULES_VERSION_OPTION, 0) >= 3) {
+            return;
+        }
+
+        try {
+            if ($this->htaccessRules->isInstalled()) {
+                $fallback = $this->compressionProbe->isApache()
+                    && ($this->htaccessRules->hasGzipFallback() || $this->compressionProbe->isCompressed() === false);
+                $this->htaccessRules->install($this->settings->all()['browser_cache_days'], $fallback);
+                delete_transient('atlas_cache_compression_status');
+            }
+            update_option(self::BROWSER_RULES_VERSION_OPTION, 3, false);
+        } catch (\RuntimeException $exception) {
+            $this->recordRuntimeError($exception);
+        }
+    }
+
     /**
      * @param array<string, array<string, mixed>> $schedules
      * @return array<string, array<string, mixed>>
@@ -122,6 +155,7 @@ final class Plugin
     {
         if (!$this->settings->isEnabled() || !$this->dropInInstaller->isCurrent()) {
             wp_clear_scheduled_hook('atlas_cache_process_queue');
+            wp_clear_scheduled_hook('atlas_cache_revalidate_site');
             wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
             return;
         }
@@ -133,6 +167,15 @@ final class Plugin
         if (!wp_next_scheduled('atlas_cache_cleanup_logs')) {
             wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'atlas_cache_cleanup_logs');
         }
+
+        $days = (int) $this->settings->all()['site_revalidation_days'];
+        if ((int) get_option(self::SCHEDULED_REVALIDATION_DAYS_OPTION, 0) !== $days) {
+            wp_clear_scheduled_hook('atlas_cache_revalidate_site');
+        }
+        if (!wp_next_scheduled('atlas_cache_revalidate_site')
+            && wp_schedule_single_event(time() + $days * DAY_IN_SECONDS, 'atlas_cache_revalidate_site')) {
+            update_option(self::SCHEDULED_REVALIDATION_DAYS_OPTION, $days, false);
+        }
     }
 
     public function processQueue(): void
@@ -142,6 +185,35 @@ final class Plugin
         }
 
         $this->worker->run();
+    }
+
+    public function revalidateSite(): void
+    {
+        if (!$this->settings->isEnabled() || !$this->dropInInstaller->isCurrent()) {
+            return;
+        }
+
+        try {
+            $excluded = $this->settings->all()['excluded_post_types'];
+            $priorities = $this->priorityResolver->priorities();
+            $taxonomyPriorities = $this->priorityResolver->taxonomyPriorities();
+            $queued = 0;
+            foreach ($this->sitemapUrlCollector->collect() as $url) {
+                if ($this->priorityResolver->isExcludedUrl($url, $excluded)) {
+                    continue;
+                }
+                $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities, $taxonomyPriorities), 'revalidate');
+                if ($status === 'created' || $status === 'requeued') {
+                    $queued++;
+                }
+            }
+            $this->logger->log('revalidate', 'Scheduled site revalidation queued: ' . $queued . ' URLs.');
+        } catch (\Throwable $exception) {
+            update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
+            $this->logger->log('error', 'Scheduled site revalidation failed: ' . $exception->getMessage());
+        } finally {
+            $this->syncSchedules();
+        }
     }
 
     /**
@@ -162,13 +234,14 @@ final class Plugin
 
         $settings = $this->settings->all();
         $this->logger->cleanup((int) $settings['debug_log_retention_days']);
-        $this->queue->cleanupFinished((int) $settings['queue_retention_days']);
+        $this->queue->cleanupFinished(self::FINISHED_QUEUE_RETENTION_DAYS);
     }
 
     private function applyRuntimeState(bool $clearQueue): bool
     {
         if (!$this->settings->isEnabled()) {
             wp_clear_scheduled_hook('atlas_cache_process_queue');
+            wp_clear_scheduled_hook('atlas_cache_revalidate_site');
             wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
 
             if ($clearQueue) {
@@ -215,6 +288,7 @@ final class Plugin
             return true;
         } catch (\RuntimeException $exception) {
             wp_clear_scheduled_hook('atlas_cache_process_queue');
+            wp_clear_scheduled_hook('atlas_cache_revalidate_site');
             wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
             $this->recordRuntimeError($exception);
 

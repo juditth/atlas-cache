@@ -16,9 +16,10 @@ final class SettingsRepository
         return [
             'enabled' => false,
             'ttl' => 86400,
+            'site_revalidation_days' => 7,
+            'browser_cache_days' => BrowserCacheGroups::defaults(),
             'stale_while_revalidate' => true,
             'worker_batch_size' => 4,
-            'queue_retention_days' => 14,
             'content_change_debounce_minutes' => 10,
             'debug_headers' => true,
             'frontend_debug_enabled' => false,
@@ -31,6 +32,7 @@ final class SettingsRepository
                 'page' => 5,
                 'post' => 20,
             ],
+            'excluded_post_types' => ['bricks_template'],
             'taxonomy_priorities' => [
                 'category' => 15,
                 'post_tag' => 25,
@@ -66,7 +68,7 @@ final class SettingsRepository
             $settings = [];
         }
 
-        return $this->normalize(array_replace_recursive($this->defaults(), $settings));
+        return $this->normalize($this->mergeWithDefaults($settings));
     }
 
     /**
@@ -74,7 +76,7 @@ final class SettingsRepository
      */
     public function save(array $settings): void
     {
-        update_option(self::OPTION_NAME, $this->normalize(array_replace_recursive($this->defaults(), $settings)), false);
+        update_option(self::OPTION_NAME, $this->normalize($this->mergeWithDefaults($settings)), false);
     }
 
     public function ensureDefaults(): void
@@ -95,13 +97,28 @@ final class SettingsRepository
      * @param array<string, mixed> $settings
      * @return array<string, mixed>
      */
+    private function mergeWithDefaults(array $settings): array
+    {
+        $merged = array_replace_recursive($this->defaults(), $settings);
+        if (array_key_exists('excluded_post_types', $settings)) {
+            $merged['excluded_post_types'] = $settings['excluded_post_types'];
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>
+     */
     private function normalize(array $settings): array
     {
         $settings['enabled'] = !empty($settings['enabled']);
         $settings['ttl'] = max(60, (int) $settings['ttl']);
+        $settings['site_revalidation_days'] = max(1, min(365, (int) $settings['site_revalidation_days']));
+        $settings['browser_cache_days'] = BrowserCacheGroups::normalize($settings['browser_cache_days'] ?? []);
         $settings['stale_while_revalidate'] = !empty($settings['stale_while_revalidate']);
         $settings['worker_batch_size'] = max(1, min(50, (int) $settings['worker_batch_size']));
-        $settings['queue_retention_days'] = max(1, min(365, (int) $settings['queue_retention_days']));
         $settings['content_change_debounce_minutes'] = max(0, min(1440, (int) $settings['content_change_debounce_minutes']));
         $settings['debug_headers'] = !empty($settings['debug_headers']);
         $settings['frontend_debug_enabled'] = !empty($settings['frontend_debug_enabled']);
@@ -111,6 +128,7 @@ final class SettingsRepository
         $settings['debug_log_retention_days'] = max(1, min(365, (int) $settings['debug_log_retention_days']));
         $settings['refresh_token'] = $this->normalizeToken((string) ($settings['refresh_token'] ?? ''));
         $settings['post_type_priorities'] = $this->normalizePriorityMap($settings['post_type_priorities'] ?? []);
+        $settings['excluded_post_types'] = array_values(array_filter(array_unique(array_map('sanitize_key', $this->normalizeStringList($settings['excluded_post_types'] ?? [])))));
         $settings['taxonomy_priorities'] = $this->normalizePriorityMap($settings['taxonomy_priorities'] ?? []);
         $settings['excluded_url_patterns'] = $this->normalizeStringList($settings['excluded_url_patterns'] ?? []);
         $settings['sensitive_cookies'] = $this->normalizeStringList($settings['sensitive_cookies'] ?? []);

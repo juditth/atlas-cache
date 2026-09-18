@@ -61,6 +61,12 @@ if (!is_file($atlasCacheHtml) || !is_readable($atlasCacheHtml)) {
 }
 
 $atlasCacheMetaData = atlas_cache_dropin_read_meta($atlasCacheMeta);
+$atlasCacheExcludedPostTypes = (array) ($atlasCacheConfig['excluded_post_types'] ?? []);
+if ($atlasCacheExcludedPostTypes !== [] && (!array_key_exists('post_type', $atlasCacheMetaData)
+    || in_array((string) $atlasCacheMetaData['post_type'], $atlasCacheExcludedPostTypes, true))) {
+    atlas_cache_dropin_debug_headers($atlasCacheConfig, 'BYPASS', 'ExcludedPostType', $atlasCacheKey);
+    return;
+}
 $atlasCacheGenerated = isset($atlasCacheMetaData['generated_at']) && is_string($atlasCacheMetaData['generated_at'])
     ? strtotime($atlasCacheMetaData['generated_at'])
     : filemtime($atlasCacheHtml);

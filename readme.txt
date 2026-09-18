@@ -23,6 +23,7 @@ Main features:
 * Separate admin pages for settings, cache rules, queue, log, tools and diagnostics.
 * Purge and revalidate actions for pages and the whole site.
 * Background queue with debounce after content changes.
+* Configurable automatic site revalidation every 1–365 days through WP-Cron (seven days by default).
 * Admin bar shortcuts for purge and revalidate actions.
 * Cache status headers with optional detailed debug headers.
 * Optional frontend debug comment with automatic expiry.

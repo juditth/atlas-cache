@@ -38,6 +38,7 @@ final class PluginFactory
         $sitemapUrlCollector = new SitemapUrlCollector();
         $priorityResolver = new CacheWarmupPriorityResolver($settings);
         $htaccessRules = new HtaccessBrowserCacheRules();
+        $compressionProbe = new CompressionProbe();
         $wpConfigEditor = new WpConfigEditor();
         $queue = new QueueRepository($GLOBALS['wpdb']);
         $worker = new QueueWorker($queue, $settings, $logger, $cacheKeyGenerator, $storage);
@@ -51,10 +52,10 @@ final class PluginFactory
             $logger,
             new SystemClock()
         );
-        $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger, $priorityResolver, $htaccessRules, $sitemapUrlCollector, $wpConfigEditor);
+        $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger, $priorityResolver, $htaccessRules, $sitemapUrlCollector, $wpConfigEditor, $compressionProbe);
         $updater = new SelfHostedUpdater(ATLAS_CACHE_FILE, ATLAS_CACHE_VERSION, (string) ATLAS_CACHE_UPDATE_INFO_URL);
 
-        return new Plugin($settings, $middleware, $adminMenu, $runtimeConfigWriter, $dropInInstaller, $htaccessRules, $wpConfigEditor, $logger, $queue, $worker, $contentChangeSubscriber, $updater);
+        return new Plugin($settings, $middleware, $adminMenu, $runtimeConfigWriter, $dropInInstaller, $htaccessRules, $wpConfigEditor, $logger, $queue, $worker, $contentChangeSubscriber, $sitemapUrlCollector, $priorityResolver, $updater, $compressionProbe);
     }
 
     public static function paths(): CachePaths

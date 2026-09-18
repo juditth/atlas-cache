@@ -42,6 +42,7 @@ function atlas_cache_uninstall_database_state(): void
 
         wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
         wp_clear_scheduled_hook('atlas_cache_process_queue');
+        wp_clear_scheduled_hook('atlas_cache_revalidate_site');
         wp_clear_scheduled_hook('puc_cron_check_updates-atlas-cache');
 
         global $wpdb;
@@ -51,12 +52,15 @@ function atlas_cache_uninstall_database_state(): void
         }
 
         delete_transient('atlas_cache_external_cache_headers');
+        delete_transient('atlas_cache_compression_status');
         delete_option('external_updates-atlas-cache');
         foreach ([
             'atlas_cache_settings',
             'atlas_cache_diagnostics',
             'atlas_cache_db_migrations',
             'atlas_cache_installed_version',
+            'atlas_cache_browser_rules_version',
+            'atlas_cache_scheduled_revalidation_days',
             'atlas_cache_wp_config_backup',
         ] as $option) {
             delete_option($option);

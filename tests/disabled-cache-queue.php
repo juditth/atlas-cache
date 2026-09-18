@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 const MINUTE_IN_SECONDS = 60;
 const HOUR_IN_SECONDS = 3600;
+const DAY_IN_SECONDS = 86400;
 
 $GLOBALS['atlas_cache_test_settings'] = ['enabled' => false];
+$GLOBALS['atlas_cache_test_options'] = [];
 $GLOBALS['atlas_cache_test_cron'] = [
     'cleared' => [],
     'scheduled' => [],
@@ -17,7 +19,13 @@ function get_option(string $name, $default = false)
         return $GLOBALS['atlas_cache_test_settings'];
     }
 
-    return $default;
+    return $GLOBALS['atlas_cache_test_options'][$name] ?? $default;
+}
+
+function update_option(string $name, $value, bool $autoload = false): bool
+{
+    $GLOBALS['atlas_cache_test_options'][$name] = $value;
+    return true;
 }
 
 function sanitize_key(string $key): string
@@ -44,10 +52,18 @@ function wp_schedule_event(int $timestamp, string $recurrence, string $hook): bo
     return true;
 }
 
+function wp_schedule_single_event(int $timestamp, string $hook): bool
+{
+    $GLOBALS['atlas_cache_test_cron']['scheduled'][$hook] = $timestamp;
+
+    return true;
+}
+
 class WP_Post
 {
 }
 
+require_once dirname(__DIR__) . '/src/Config/BrowserCacheGroups.php';
 require_once dirname(__DIR__) . '/src/Config/SettingsRepository.php';
 require_once dirname(__DIR__) . '/src/DropIn/DropInInstaller.php';
 require_once dirname(__DIR__) . '/src/Queue/QueueWorker.php';
@@ -94,6 +110,7 @@ $plugin->processQueue();
 
 atlas_cache_test_assert(($GLOBALS['atlas_cache_test_cron']['cleared']['atlas_cache_process_queue'] ?? 0) === 1, 'Disabled cache must clear the worker hook.');
 atlas_cache_test_assert(($GLOBALS['atlas_cache_test_cron']['cleared']['atlas_cache_cleanup_logs'] ?? 0) === 1, 'Disabled cache must clear the cleanup hook.');
+atlas_cache_test_assert(($GLOBALS['atlas_cache_test_cron']['cleared']['atlas_cache_revalidate_site'] ?? 0) === 1, 'Disabled cache must clear scheduled site revalidation.');
 atlas_cache_test_assert($GLOBALS['atlas_cache_test_cron']['scheduled'] === [], 'Disabled cache must not schedule Atlas jobs.');
 
 $source = tempnam(sys_get_temp_dir(), 'atlas-source-');
@@ -104,10 +121,18 @@ file_put_contents($source, $dropInContents);
 file_put_contents($target, $dropInContents);
 $dropInInstaller = new AtlasCache\DropIn\DropInInstaller($source, $target);
 atlas_cache_test_set_property($plugin, 'dropInInstaller', $dropInInstaller);
-$GLOBALS['atlas_cache_test_settings'] = ['enabled' => true];
+$GLOBALS['atlas_cache_test_settings'] = ['enabled' => true, 'site_revalidation_days' => 3];
+$beforeSchedule = time();
 $plugin->syncSchedules();
 atlas_cache_test_assert(($GLOBALS['atlas_cache_test_cron']['scheduled']['atlas_cache_process_queue'] ?? 0) === 1, 'Enabled cache must schedule the worker.');
 atlas_cache_test_assert(($GLOBALS['atlas_cache_test_cron']['scheduled']['atlas_cache_cleanup_logs'] ?? 0) === 1, 'Enabled cache must schedule cleanup.');
+$scheduledRevalidation = $GLOBALS['atlas_cache_test_cron']['scheduled']['atlas_cache_revalidate_site'] ?? 0;
+atlas_cache_test_assert($scheduledRevalidation >= $beforeSchedule + 3 * DAY_IN_SECONDS, 'Site revalidation must use the configured interval.');
+atlas_cache_test_assert($scheduledRevalidation <= time() + 3 * DAY_IN_SECONDS, 'Site revalidation must not be scheduled later than the configured interval.');
+
+$GLOBALS['atlas_cache_test_settings'] = ['enabled' => true];
+$plugin->syncSchedules();
+atlas_cache_test_assert($GLOBALS['atlas_cache_test_options']['atlas_cache_scheduled_revalidation_days'] === 7, 'Changing the default interval must reschedule revalidation for seven days.');
 
 file_put_contents($target, "<?php\n/* Atlas Cache drop-in: outdated */\n");
 atlas_cache_test_assert(!$dropInInstaller->isCurrent(), 'An outdated owned drop-in must be detected.');

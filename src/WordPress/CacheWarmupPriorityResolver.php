@@ -151,6 +151,38 @@ final class CacheWarmupPriorityResolver
         return isset($priorities[$postType]) ? $priorities[$postType] : $this->defaultPriority($postType);
     }
 
+    /**
+     * Whether a public URL belongs to a post type excluded from caching.
+     *
+     * @param list<string>|null $excluded
+     */
+    public function isExcludedUrl(string $url, ?array $excluded = null): bool
+    {
+        $excluded = $excluded ?? $this->settings->all()['excluded_post_types'];
+        if ($excluded === []) {
+            return false;
+        }
+
+        $postType = $this->postTypeForUrl($url);
+        if ($postType !== '' && in_array($postType, $excluded, true)) {
+            return true;
+        }
+
+        foreach ($excluded as $name) {
+            $archiveUrl = get_post_type_archive_link($name);
+            if (!is_string($archiveUrl)) {
+                continue;
+            }
+            $archivePath = $this->normalizedPath($archiveUrl);
+            $path = $this->normalizedPath($url);
+            if ($archivePath !== '' && ($path === $archivePath || strpos($path, $archivePath . '/page/') === 0)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function defaultPriority(string $postType): int
     {
         if ($postType === 'page') {
@@ -188,12 +220,16 @@ final class CacheWarmupPriorityResolver
                 return is_string($frontPostType) ? $frontPostType : 'page';
             }
 
-            return 'page';
+            return get_option('show_on_front') === 'posts' ? 'post' : 'page';
         }
 
         $postId = url_to_postid($url);
         if ($postId <= 0) {
             return '';
+        }
+
+        if ($postId === (int) get_option('page_for_posts')) {
+            return 'post';
         }
 
         $postType = get_post_type($postId);

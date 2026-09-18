@@ -36,6 +36,7 @@ final class RuntimeConfigWriter
             'allowed_hosts' => $this->allowedHosts(),
             'sensitive_cookies' => array_values((array) $settings['sensitive_cookies']),
             'excluded_url_patterns' => array_values((array) $settings['excluded_url_patterns']),
+            'excluded_post_types' => array_values((array) $settings['excluded_post_types']),
             'query_string_whitelist' => array_values((array) $settings['query_string_whitelist']),
         ];
 

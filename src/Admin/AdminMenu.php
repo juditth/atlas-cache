@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AtlasCache\Admin;
 
 use AtlasCache\Config\RuntimeConfigWriter;
+use AtlasCache\Config\BrowserCacheGroups;
 use AtlasCache\Config\SettingsRepository;
 use AtlasCache\Debug\Logger;
 use AtlasCache\DropIn\DropInInstaller;
@@ -12,6 +13,7 @@ use AtlasCache\Queue\QueueRepository;
 use AtlasCache\Queue\QueueWorker;
 use AtlasCache\Storage\CacheStorageInterface;
 use AtlasCache\WordPress\CacheWarmupPriorityResolver;
+use AtlasCache\WordPress\CompressionProbe;
 use AtlasCache\WordPress\HtaccessBrowserCacheRules;
 use AtlasCache\WordPress\SitemapUrlCollector;
 use AtlasCache\WordPress\WpConfigEditor;
@@ -28,6 +30,7 @@ final class AdminMenu
     private Logger $logger;
     private CacheWarmupPriorityResolver $priorityResolver;
     private HtaccessBrowserCacheRules $htaccessRules;
+    private CompressionProbe $compressionProbe;
     private SitemapUrlCollector $sitemapUrlCollector;
     private WpConfigEditor $wpConfigEditor;
 
@@ -42,7 +45,8 @@ final class AdminMenu
         CacheWarmupPriorityResolver $priorityResolver,
         HtaccessBrowserCacheRules $htaccessRules,
         SitemapUrlCollector $sitemapUrlCollector,
-        WpConfigEditor $wpConfigEditor
+        WpConfigEditor $wpConfigEditor,
+        CompressionProbe $compressionProbe
     ) {
         $this->settings = $settings;
         $this->storage = $storage;
@@ -53,20 +57,25 @@ final class AdminMenu
         $this->logger = $logger;
         $this->priorityResolver = $priorityResolver;
         $this->htaccessRules = $htaccessRules;
+        $this->compressionProbe = $compressionProbe;
         $this->sitemapUrlCollector = $sitemapUrlCollector;
         $this->wpConfigEditor = $wpConfigEditor;
     }
 
     public function register(): void
     {
-        add_menu_page('Atlas Cache', 'Atlas Cache', 'manage_options', 'atlas-cache', [$this, 'overview'], 'dashicons-performance', 58);
-        add_submenu_page('atlas-cache', 'Overview', 'Overview', 'manage_options', 'atlas-cache', [$this, 'overview']);
-        add_submenu_page('atlas-cache', 'Settings', 'Settings', 'manage_options', 'atlas-cache-settings', [$this, 'settings']);
-        add_submenu_page('atlas-cache', 'Cache rules', 'Cache rules', 'manage_options', 'atlas-cache-rules', [$this, 'rules']);
-        add_submenu_page('atlas-cache', 'Queue', 'Queue', 'manage_options', 'atlas-cache-queue', [$this, 'queue']);
-        add_submenu_page('atlas-cache', 'Log', 'Log', 'manage_options', 'atlas-cache-log', [$this, 'log']);
-        add_submenu_page('atlas-cache', 'Tools', 'Tools', 'manage_options', 'atlas-cache-tools', [$this, 'tools']);
-        add_submenu_page('atlas-cache', 'Diagnostics', 'Diagnostics', 'manage_options', 'atlas-cache-diagnostics', [$this, 'diagnostics']);
+        add_menu_page('Atlas Cache', 'Atlas Cache', 'manage_options', 'atlas-cache-tools', [$this, 'tools'], 'dashicons-performance', 58);
+        add_submenu_page('atlas-cache-tools', 'Tools', 'Tools', 'manage_options', 'atlas-cache-tools', [$this, 'tools']);
+        add_submenu_page('atlas-cache-tools', 'Settings', 'Settings', 'manage_options', 'atlas-cache-settings', [$this, 'settings']);
+        add_submenu_page('atlas-cache-tools', 'Cache rules', 'Cache rules', 'manage_options', 'atlas-cache-rules', [$this, 'rules']);
+        add_submenu_page('atlas-cache-tools', 'Queue', 'Queue', 'manage_options', 'atlas-cache-queue', [$this, 'queue']);
+        add_submenu_page('atlas-cache-tools', 'Log', 'Log', 'manage_options', 'atlas-cache-log', [$this, 'log']);
+        add_submenu_page('atlas-cache-tools', 'Diagnostics', 'Diagnostics', 'manage_options', 'atlas-cache-diagnostics', [$this, 'diagnostics']);
+
+        // WordPress requires the parent slug to be registered first; display Tools before Diagnostics.
+        global $submenu;
+        $toolsItem = array_shift($submenu['atlas-cache-tools']);
+        array_splice($submenu['atlas-cache-tools'], -1, 0, [$toolsItem]);
     }
 
     public function enqueueAssets(string $hook): void
@@ -79,7 +88,7 @@ final class AdminMenu
             'atlas-cache-admin',
             ATLAS_CACHE_URL . 'assets/admin.css',
             [],
-            ATLAS_CACHE_VERSION
+            (string) filemtime(ATLAS_CACHE_DIR . 'assets/admin.css')
         );
     }
 
@@ -92,7 +101,7 @@ final class AdminMenu
         $adminBar->add_node([
             'id' => 'atlas-cache',
             'title' => 'Atlas Cache',
-            'href' => admin_url('admin.php?page=atlas-cache'),
+            'href' => admin_url('admin.php?page=atlas-cache-tools'),
         ]);
 
         $cacheEnabled = $this->settings->isEnabled();
@@ -177,7 +186,7 @@ final class AdminMenu
         }
 
         $redirect = isset($_GET['atlas_cache_redirect']) ? esc_url_raw((string) wp_unslash($_GET['atlas_cache_redirect'])) : '';
-        wp_safe_redirect($redirect !== '' ? $redirect : admin_url('admin.php?page=atlas-cache'));
+        wp_safe_redirect($redirect !== '' ? $redirect : admin_url('admin.php?page=atlas-cache-tools'));
         exit;
     }
 
@@ -191,6 +200,17 @@ final class AdminMenu
             check_admin_referer('atlas_cache_save_settings');
             $this->saveSettings();
             wp_safe_redirect(add_query_arg('atlas-cache-updated', '1', wp_get_referer() ?: admin_url('admin.php?page=atlas-cache-settings')));
+            exit;
+        }
+
+        if (isset($_POST['atlas_cache_save_browser_cache'])) {
+            check_admin_referer('atlas_cache_save_browser_cache');
+            $saved = $this->saveBrowserCacheSettings();
+            wp_safe_redirect(add_query_arg(
+                $saved ? 'atlas-cache-updated' : 'atlas-cache-browser-error',
+                '1',
+                admin_url('admin.php?page=atlas-cache-settings&tab=browser-cache')
+            ));
             exit;
         }
 
@@ -209,36 +229,29 @@ final class AdminMenu
         }
     }
 
-    public function overview(): void
-    {
-        $settings = $this->settings->all();
-        $stats = $this->storage->stats();
-        $this->header('Overview');
-        $this->notice();
-        echo '<div class="atlas-cache-grid">';
-        $this->card('Cache', !empty($settings['enabled']) ? 'Enabled' : 'Disabled');
-        $this->card('Drop-in', $this->dropInStatus());
-        $this->card('WP_CACHE', (defined('WP_CACHE') && WP_CACHE) ? 'Enabled' : 'Disabled');
-        $this->card('Cache size', esc_html(size_format((int) $stats['size'])));
-        $this->card('Cache files', (string) (int) $stats['files']);
-        $this->card('Queue', (string) $this->queue->countPending());
-        echo '</div>';
-        $this->footer();
-    }
-
     public function settings(): void
     {
         $settings = $this->settings->all();
         $this->header('Settings');
         $this->notice();
+        $tab = isset($_GET['tab']) && sanitize_key((string) $_GET['tab']) === 'browser-cache' ? 'browser-cache' : 'general';
+        echo '<nav class="nav-tab-wrapper" aria-label="Settings tabs">';
+        echo '<a class="nav-tab' . ($tab === 'general' ? ' nav-tab-active' : '') . '" href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">General</a>';
+        echo '<a class="nav-tab' . ($tab === 'browser-cache' ? ' nav-tab-active' : '') . '" href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings&tab=browser-cache')) . '">Browser cache</a>';
+        echo '</nav>';
+        if ($tab === 'browser-cache') {
+            $this->browserCacheSettings($settings);
+            $this->footer();
+            return;
+        }
         echo '<form method="post" class="atlas-cache-panel atlas-cache-form">';
         wp_nonce_field('atlas_cache_save_settings');
         echo '<input type="hidden" name="atlas_cache_save_settings" value="1">';
         $this->mainCheckbox('enabled', 'Enable cache', $settings, 'Master switch for Atlas Cache. When off, Atlas Cache does not serve or store HTML, enqueue cache jobs, or run the queue worker.');
         $this->number('ttl', 'TTL in seconds', $settings, 60, 31536000, 'After this time cached HTML is considered stale. With stale mode enabled, the old version can still be served while a new one is prepared.');
+        $this->number('site_revalidation_days', 'Automatic site revalidation interval (days)', $settings, 1, 365, 'Queues public URLs for background revalidation at this interval. The worker processes them in batches.');
         $this->checkbox('stale_while_revalidate', 'Stale while revalidate', $settings, false, 'Visitors can keep receiving the last complete cached HTML while revalidation runs in the background.');
         $this->number('worker_batch_size', 'URLs per worker run', $settings, 1, 50, 'How many queued URLs the worker may process in one run.');
-        $this->number('queue_retention_days', 'Delete completed queue items after days', $settings, 1, 365, 'Done and failed queue history is removed during scheduled cleanup. Disabling cache clears the entire queue immediately.');
         $this->renderPostTypePriorityTable($settings);
         $this->number('content_change_debounce_minutes', 'Revalidate delay after content changes', $settings, 0, 1440, 'When content is saved repeatedly, Atlas Cache waits this many minutes after the last save before processing the queued revalidation.');
         $this->checkbox('debug_headers', 'Debug HTTP headers', $settings, false, 'The basic X-Atlas-Cache status header is always sent. Enable this to add detailed reason, key and age headers.');
@@ -251,6 +264,52 @@ final class AdminMenu
         submit_button('Save settings');
         echo '</form>';
         $this->footer();
+    }
+
+    /** @param array<string, mixed> $settings */
+    private function browserCacheSettings(array $settings): void
+    {
+        echo '<form method="post" class="atlas-cache-panel atlas-cache-form">';
+        wp_nonce_field('atlas_cache_save_browser_cache');
+        echo '<input type="hidden" name="atlas_cache_save_browser_cache" value="1">';
+        echo '<h2>Static file browser cache</h2>';
+        echo '<p>Set how long browsers may reuse each file type. Zero adds no Atlas Cache rule for that type; existing server settings can still apply. HTML page caching is controlled by TTL on the General tab.</p>';
+        echo '<p>These rules apply through the Atlas Cache block in an existing .htaccess file on Apache or LiteSpeed. Install the block under Tools. nginx does not use .htaccess.</p>';
+        echo '<p>On Apache, Atlas Cache also adds a gzip fallback if the homepage does not already report compression. If the check fails, gzip rules are not added.</p>';
+        echo '<div class="atlas-cache-resource-grid">';
+        $days = BrowserCacheGroups::normalize($settings['browser_cache_days'] ?? []);
+        foreach (BrowserCacheGroups::all() as $key => $group) {
+            echo '<div class="atlas-cache-resource-card">';
+            echo '<label class="atlas-cache-label" for="atlas-cache-' . esc_attr($key) . '">' . esc_html($group['label']) . '</label>';
+            echo '<p class="description">' . esc_html($group['description']) . '</p>';
+            echo '<p><code>' . esc_html(str_replace('|', ', ', $group['extensions'])) . '</code></p>';
+            echo '<input id="atlas-cache-' . esc_attr($key) . '" type="number" class="small-text" name="browser_cache_days[' . esc_attr($key) . ']" value="' . esc_attr((string) $days[$key]) . '" min="0" max="365" step="1"> days';
+            echo '</div>';
+        }
+        echo '</div>';
+        submit_button('Save browser cache settings');
+        echo '</form>';
+    }
+
+    private function saveBrowserCacheSettings(): bool
+    {
+        $settings = $this->settings->all();
+        $raw = isset($_POST['browser_cache_days']) && is_array($_POST['browser_cache_days'])
+            ? wp_unslash($_POST['browser_cache_days'])
+            : [];
+        $settings['browser_cache_days'] = BrowserCacheGroups::normalize($raw);
+        $this->settings->save($settings);
+        if ($this->htaccessRules->isInstalled()) {
+            try {
+                $this->htaccessRules->install($settings['browser_cache_days'], $this->shouldUseGzipFallback());
+                delete_transient('atlas_cache_compression_status');
+            } catch (RuntimeException $exception) {
+                update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage()], false);
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function rules(): void
@@ -300,18 +359,37 @@ final class AdminMenu
     {
         $this->header('Tools');
         $this->notice();
+        $this->renderStatusCards();
         echo '<form method="post" class="atlas-cache-tools">';
         wp_nonce_field('atlas_cache_tools');
         $this->toolButton('queue-revalidate-all', 'Revalidate cache of site', 'Queues URLs found in the sitemap for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
-        $this->toolButton('run-worker', 'Run worker now', 'Processes pending queue items immediately, using the configured URLs-per-run limit. Revalidate jobs use an internal request.', 'secondary');
-        $this->toolButton('enable-wp-cache', 'Enable WP_CACHE', 'Writes a small Atlas Cache marker block into wp-config.php so WordPress loads advanced-cache.php before bootstrapping. Reload the admin after running it.', 'secondary');
-        $this->toolButton('install-htaccess-browser-cache', 'Install .htaccess browser cache rules', 'Adds an Atlas Cache BEGIN/END block to an existing .htaccess file. Useful on Apache/LiteSpeed hosting; nginx ignores .htaccess files.', 'secondary');
-        $this->toolButton('remove-htaccess-browser-cache', 'Remove .htaccess browser cache rules', 'Removes only the Atlas Cache browser cache block from .htaccess and leaves the rest of the file untouched.', 'secondary');
-        $this->toolButton('rewrite-config', 'Repair fast-cache settings file', 'Usually not needed. Settings are written automatically. Use this only when diagnostics reports a missing or broken advanced-cache.php config file.', 'secondary');
-        $this->toolButton('install-dropin', 'Reinstall drop-in', 'Copies the Atlas Cache advanced-cache.php file into wp-content again. It will not overwrite another plugin’s drop-in unless the Atlas Cache ownership marker is present.', 'secondary');
         $this->toolButton('purge-all', 'Clear cache files', 'Immediately deletes all Atlas Cache HTML files without using the queue. If Enable cache is on, new cache files can be created again by future public visits and revalidation jobs.', 'primary', 'Clear all Atlas Cache HTML files now? New cache files can be created again if Enable cache is on.');
+        $this->toolButton('run-worker', 'Run worker now', 'Processes pending queue items immediately, using the configured URLs-per-run limit. Revalidate jobs use an internal request.', 'secondary');
+        $this->htaccessToolButtons();
+        $this->advancedCacheToolButtons();
         echo '</form>';
         $this->footer();
+    }
+
+    private function renderStatusCards(): void
+    {
+        $settings = $this->settings->all();
+        $stats = $this->storage->stats();
+        echo '<div class="atlas-cache-grid">';
+        $cacheEnabled = !empty($settings['enabled']);
+        $wpCacheEnabled = $this->wpConfigEditor->isCacheEnabled();
+        $this->card('Cache', $cacheEnabled ? 'Enabled' : 'Disabled', $cacheEnabled ? 'disable-cache' : 'enable-cache', $cacheEnabled ? 'Disable cache' : 'Enable cache');
+        $dropInCurrent = $this->dropInInstaller->isCurrent();
+        $dropInAction = $dropInCurrent ? 'disable-dropin' : ($cacheEnabled ? 'install-dropin' : 'enable-cache');
+        $dropInLabel = $dropInCurrent ? 'Disable advanced-cache.php' : ($cacheEnabled ? 'Install advanced-cache.php' : 'Enable cache');
+        $this->card('advanced-cache.php', $this->dropInStatus(), $dropInAction, $dropInLabel);
+        $wpCacheAction = $wpCacheEnabled ? 'disable-wp-cache' : ($cacheEnabled ? 'enable-wp-cache' : 'enable-cache');
+        $wpCacheLabel = $wpCacheEnabled ? 'Disable WP_CACHE' : ($cacheEnabled ? 'Enable WP_CACHE' : 'Enable cache');
+        $this->card('WP_CACHE', $wpCacheEnabled ? 'Enabled' : 'Disabled', $wpCacheAction, $wpCacheLabel);
+        $this->card('Cache size', esc_html(size_format((int) $stats['size'])));
+        $this->card('Cache files', (string) (int) $stats['files']);
+        $this->card('Queue', (string) $this->queue->countPending());
+        echo '</div>';
     }
 
     public function diagnostics(): void
@@ -321,12 +399,15 @@ final class AdminMenu
         $pageCachePlugins = $this->detectKnownPageCachePlugins();
         $formPlugins = $this->detectKnownFormPlugins();
         $externalCacheHeaders = $this->detectExternalCacheHeaders();
+        $compression = $this->detectCompression();
         echo '<table class="widefat striped"><tbody>';
-        $this->row('WP_CACHE', (defined('WP_CACHE') && WP_CACHE) ? 'Enabled' : 'Disabled - WordPress will not load the drop-in until WP_CACHE is true.');
+        $this->row('WP_CACHE', (defined('WP_CACHE') && WP_CACHE) ? 'Enabled' : 'Disabled - WordPress will not load advanced-cache.php until WP_CACHE is true.');
         $this->row('wp-config.php', $this->wpConfigStatus());
         $this->row('advanced-cache.php', $this->dropInStatus());
-        $this->row('Drop-in owner', $this->dropInInstaller->isOwnedByAtlas() ? 'Atlas Cache' : 'Another plugin or unknown');
+        $this->row('advanced-cache.php owner', $this->dropInInstaller->isOwnedByAtlas() ? 'Atlas Cache' : 'Another plugin or unknown');
         $this->row('.htaccess browser cache', $this->htaccessRules->status());
+        $this->row('Atlas Cache gzip fallback', $this->htaccessRules->hasGzipFallback() ? 'Installed in the Atlas Cache .htaccess block.' : 'Not installed.');
+        $this->row('HTML compression', $compression);
         $this->row('Cache directory', is_writable(WP_CONTENT_DIR . '/cache/atlas-cache') ? 'Writable' : 'Not writable');
         $this->row('Update endpoint', $this->updateEndpointStatus());
         if (is_array($diagnostics) && !empty($diagnostics['last_error'])) {
@@ -339,7 +420,7 @@ final class AdminMenu
         echo '<h2>Compatibility checks</h2>';
         echo '<table class="widefat striped"><tbody>';
         if ($pageCachePlugins !== []) {
-            $this->row('Page cache conflict', 'Warning: another page-cache plugin is active: ' . implode(', ', $pageCachePlugins) . '. Only one plugin should own advanced-cache.php. Atlas Cache does not overwrite a foreign drop-in.');
+            $this->row('Page cache conflict', 'Warning: another page-cache plugin is active: ' . implode(', ', $pageCachePlugins) . '. Only one plugin should own advanced-cache.php. Atlas Cache does not overwrite another plugin’s file.');
         } else {
             $this->row('Page cache conflict', 'OK - no known active page-cache plugin detected.');
         }
@@ -374,9 +455,10 @@ final class AdminMenu
         $settings = [
             'enabled' => !empty($_POST['enabled']),
             'ttl' => (int) ($_POST['ttl'] ?? $current['ttl']),
+            'site_revalidation_days' => (int) ($_POST['site_revalidation_days'] ?? $current['site_revalidation_days']),
+            'browser_cache_days' => $current['browser_cache_days'],
             'stale_while_revalidate' => !empty($_POST['stale_while_revalidate']),
             'worker_batch_size' => (int) ($_POST['worker_batch_size'] ?? $current['worker_batch_size']),
-            'queue_retention_days' => (int) ($_POST['queue_retention_days'] ?? $current['queue_retention_days']),
             'content_change_debounce_minutes' => (int) ($_POST['content_change_debounce_minutes'] ?? $current['content_change_debounce_minutes']),
             'debug_headers' => !empty($_POST['debug_headers']),
             'frontend_debug_enabled' => $frontendDebugEnabled,
@@ -386,6 +468,7 @@ final class AdminMenu
             'debug_log_retention_days' => (int) ($_POST['debug_log_retention_days'] ?? $current['debug_log_retention_days']),
             'refresh_token' => (string) $current['refresh_token'],
             'post_type_priorities' => $this->postedPostTypePriorities($current['post_type_priorities'] ?? []),
+            'excluded_post_types' => $this->postedExcludedPostTypes(),
             'taxonomy_priorities' => $this->postedTaxonomyPriorities($current['taxonomy_priorities'] ?? []),
             'excluded_url_patterns' => $this->postedLines('excluded_url_patterns', $current['excluded_url_patterns']),
             'sensitive_cookies' => $this->postedLines('sensitive_cookies', $current['sensitive_cookies']),
@@ -398,6 +481,13 @@ final class AdminMenu
 
         $this->settings->save($settings);
         $savedSettings = $this->settings->all();
+
+        if ($current['excluded_post_types'] !== $savedSettings['excluded_post_types']) {
+            $this->storage->purgeAll();
+            if (!empty($current['enabled']) && !empty($savedSettings['enabled'])) {
+                $this->queueSitemapRevalidation('Settings content type exclusions changed');
+            }
+        }
 
         if (empty($current['enabled']) && !empty($savedSettings['enabled'])) {
             $this->queueSitemapRevalidation('Settings enabled cache');
@@ -417,6 +507,45 @@ final class AdminMenu
     private function runTool(string $tool): void
     {
         try {
+            if ($tool === 'enable-cache' || $tool === 'disable-cache') {
+                $settings = $this->settings->all();
+                $wasEnabled = !empty($settings['enabled']);
+                $settings['enabled'] = $tool === 'enable-cache';
+                $this->settings->save($settings);
+                $isEnabled = $this->settings->isEnabled();
+                if (!$wasEnabled && $isEnabled) {
+                    $this->queueSitemapRevalidation('Tools enabled cache');
+                }
+                $diagnostics = get_option('atlas_cache_diagnostics', []);
+                $error = is_array($diagnostics) ? (string) ($diagnostics['last_error'] ?? '') : '';
+                if ($isEnabled !== ($tool === 'enable-cache') && $error === '') {
+                    $error = 'Cache state could not be changed. Check diagnostics.';
+                }
+                update_option('atlas_cache_diagnostics', [
+                    'last_error' => $isEnabled === ($tool === 'enable-cache') ? '' : $error,
+                    'last_tool_message' => $isEnabled === ($tool === 'enable-cache') ? ($isEnabled ? 'Cache was enabled.' : 'Cache was disabled.') : 'Cache state could not be changed. Check diagnostics.',
+                ], false);
+                return;
+            }
+
+            if ($tool === 'disable-wp-cache') {
+                $settings = $this->settings->all();
+                $settings['enabled'] = false;
+                $this->settings->save($settings);
+                $this->wpConfigEditor->disableCacheExplicitly();
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache and WP_CACHE were disabled.'], false);
+                return;
+            }
+
+            if ($tool === 'disable-dropin') {
+                $settings = $this->settings->all();
+                $settings['enabled'] = false;
+                $this->settings->save($settings);
+                $this->dropInInstaller->uninstall();
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache was disabled and Atlas Cache advanced-cache.php was removed.'], false);
+                return;
+            }
+
             if ($tool === 'purge-all') {
                 $this->storage->purgeAll();
                 $this->logger->log('purge', 'Manual clear cache files');
@@ -431,7 +560,7 @@ final class AdminMenu
 
             if ($tool === 'run-worker') {
                 if (!$this->dropInInstaller->isCurrent()) {
-                    update_option('atlas_cache_diagnostics', ['last_error' => 'Atlas Cache drop-in is missing or outdated.', 'last_tool_message' => 'Worker was not started because the Atlas Cache drop-in is missing or outdated.'], false);
+                    update_option('atlas_cache_diagnostics', ['last_error' => 'Atlas Cache advanced-cache.php is missing or outdated.', 'last_tool_message' => 'Worker was not started because Atlas Cache advanced-cache.php is missing or outdated.'], false);
                     return;
                 }
 
@@ -454,13 +583,15 @@ final class AdminMenu
             }
 
             if ($tool === 'install-htaccess-browser-cache') {
-                $this->htaccessRules->install();
+                $this->htaccessRules->install($this->settings->all()['browser_cache_days'], $this->shouldUseGzipFallback());
+                delete_transient('atlas_cache_compression_status');
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => '.htaccess browser cache rules were installed.'], false);
                 return;
             }
 
             if ($tool === 'remove-htaccess-browser-cache') {
                 $this->htaccessRules->uninstall();
+                delete_transient('atlas_cache_compression_status');
                 update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => '.htaccess browser cache rules were removed.'], false);
                 return;
             }
@@ -473,13 +604,13 @@ final class AdminMenu
 
             if ($tool === 'install-dropin') {
                 if (!$this->settings->isEnabled()) {
-                    update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache is disabled. No drop-in was installed.'], false);
+                    update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache is disabled. advanced-cache.php was not installed.'], false);
                     return;
                 }
 
                 $this->runtimeConfigWriter->write();
                 $this->dropInInstaller->install();
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Drop-in was reinstalled and fast-cache settings file was rewritten.'], false);
+                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'advanced-cache.php was reinstalled and its settings file was rewritten.'], false);
             }
         } catch (RuntimeException $exception) {
             update_option('atlas_cache_diagnostics', ['last_error' => $exception->getMessage(), 'last_tool_message' => 'Tool failed: ' . $exception->getMessage()], false);
@@ -525,8 +656,13 @@ final class AdminMenu
         ];
         $priorities = $this->priorityResolver->priorities();
         $taxonomyPriorities = $this->priorityResolver->taxonomyPriorities();
+        $excludedPostTypes = $this->settings->all()['excluded_post_types'];
 
         foreach ($urls as $url) {
+            if ($this->priorityResolver->isExcludedUrl($url, $excludedPostTypes)) {
+                $result['skipped']++;
+                continue;
+            }
             $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities, $taxonomyPriorities), 'revalidate');
             if (isset($result[$status])) {
                 $result[$status]++;
@@ -574,6 +710,24 @@ final class AdminMenu
     }
 
     /**
+     * @return list<string>
+     */
+    private function postedExcludedPostTypes(): array
+    {
+        $raw = isset($_POST['excluded_post_types']) && is_array($_POST['excluded_post_types'])
+            ? wp_unslash($_POST['excluded_post_types'])
+            : [];
+        $excluded = [];
+        foreach ($this->priorityResolver->postTypes() as $postType) {
+            if (!empty($raw[$postType->name])) {
+                $excluded[] = (string) $postType->name;
+            }
+        }
+
+        return $excluded;
+    }
+
+    /**
      * @param mixed $fallback
      * @return array<string, int>
      */
@@ -604,14 +758,15 @@ final class AdminMenu
         }
 
         $priorities = is_array($settings['post_type_priorities'] ?? null) ? $settings['post_type_priorities'] : [];
+        $excludedPostTypes = is_array($settings['excluded_post_types'] ?? null) ? $settings['excluded_post_types'] : [];
         $taxonomyPriorities = is_array($settings['taxonomy_priorities'] ?? null) ? $settings['taxonomy_priorities'] : [];
 
-        echo '<h2>Cache warm-up priority</h2>';
-        echo '<p class="description">Lower numbers run earlier in the queue. Use this to warm important pages and archive pages before lower-priority blog content.</p>';
+        echo '<h2>Content caching and warm-up priority</h2>';
+        echo '<p class="description">Excluded content types are not cached or queued for warm-up. Changing exclusions clears existing HTML cache. Lower priority numbers run earlier in the queue.</p>';
 
         if ($postTypes !== []) {
             echo '<h3>Content types</h3>';
-            echo '<table class="widefat striped atlas-cache-priority-table"><thead><tr><th>Content type</th><th>Slug</th><th>Priority</th></tr></thead><tbody>';
+            echo '<table class="widefat striped atlas-cache-priority-table"><thead><tr><th>Content type</th><th>Slug</th><th>Priority</th><th>Exclude</th></tr></thead><tbody>';
             foreach ($postTypes as $postType) {
                 $name = (string) $postType->name;
                 $label = (string) ($postType->labels->name ?? $name);
@@ -620,6 +775,7 @@ final class AdminMenu
                 echo '<td>' . esc_html($label) . '</td>';
                 echo '<td><code>' . esc_html($name) . '</code></td>';
                 echo '<td><input type="number" class="small-text" name="post_type_priorities[' . esc_attr($name) . ']" value="' . esc_attr((string) $priority) . '" min="1" max="100"></td>';
+                echo '<td><label><input type="checkbox" name="excluded_post_types[' . esc_attr($name) . ']" value="1"' . checked(in_array($name, $excludedPostTypes, true), true, false) . '> Exclude from cache processing</label></td>';
                 echo '</tr>';
             }
             echo '</tbody></table>';
@@ -704,11 +860,13 @@ final class AdminMenu
         }
 
         if ($this->dropInInstaller->isCurrent()) {
-            return 'Current Atlas Cache drop-in is active';
+            return $this->settings->isEnabled() && $this->wpConfigEditor->isCacheEnabled()
+                ? 'Installed and active'
+                : 'Installed but inactive';
         }
 
         if ($this->dropInInstaller->isOwnedByAtlas()) {
-            return 'Outdated Atlas Cache drop-in - runtime repair required';
+            return 'Outdated - repair required';
         }
 
         return $this->dropInInstaller->exists()
@@ -816,6 +974,50 @@ final class AdminMenu
         return $detected;
     }
 
+    private function detectCompression(): string
+    {
+        $cached = get_transient('atlas_cache_compression_status');
+        if (is_string($cached)) {
+            return $cached;
+        }
+
+        $response = wp_remote_get(home_url('/'), [
+            'timeout' => 5,
+            'redirection' => 0,
+            'limit_response_size' => 1,
+            'decompress' => false,
+            'headers' => [
+                'Accept-Encoding' => 'gzip, br',
+                'X-Atlas-Cache-Diagnostic' => '1',
+            ],
+        ]);
+        if (is_wp_error($response)) {
+            $status = 'Could not check homepage response: ' . $response->get_error_message();
+        } else {
+            $encoding = wp_remote_retrieve_header($response, 'content-encoding');
+            $encoding = is_array($encoding) ? implode(', ', $encoding) : (string) $encoding;
+            $status = $encoding !== ''
+                ? 'Homepage response uses ' . $encoding . ' compression.'
+                : 'No Content-Encoding reported on the homepage response. Configure compression at the web server or proxy if needed.';
+        }
+        set_transient('atlas_cache_compression_status', $status, 5 * MINUTE_IN_SECONDS);
+
+        return $status;
+    }
+
+    private function shouldUseGzipFallback(): bool
+    {
+        if (!$this->compressionProbe->isApache()) {
+            return false;
+        }
+
+        if ($this->htaccessRules->hasGzipFallback()) {
+            return true;
+        }
+
+        return $this->compressionProbe->isCompressed() === false;
+    }
+
     private function header(string $title): void
     {
         echo '<div class="wrap atlas-cache"><div class="atlas-cache-header"><h1>' . esc_html($title) . '</h1></div>';
@@ -828,6 +1030,11 @@ final class AdminMenu
 
     private function notice(): void
     {
+        if (isset($_GET['atlas-cache-browser-error'])) {
+            $diagnostics = get_option('atlas_cache_diagnostics', []);
+            $error = is_array($diagnostics) ? (string) ($diagnostics['last_error'] ?? '') : '';
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html('Settings saved, but .htaccess rules could not be updated: ' . $error) . '</p></div>';
+        }
         if (isset($_GET['atlas-cache-updated'])) {
             $message = 'Saved.';
             $class = 'notice-success';
@@ -860,9 +1067,16 @@ final class AdminMenu
             . (int) $result['total'] . ' total.';
     }
 
-    private function card(string $label, string $value): void
+    private function card(string $label, string $value, string $action = '', string $actionLabel = ''): void
     {
-        echo '<div class="atlas-cache-card"><h2>' . esc_html($label) . '</h2><p>' . esc_html($value) . '</p></div>';
+        echo '<div class="atlas-cache-card"><h2>' . esc_html($label) . '</h2><p>' . esc_html($value) . '</p>';
+        if ($action !== '') {
+            echo '<form method="post" class="atlas-cache-card-action">';
+            wp_nonce_field('atlas_cache_tools');
+            echo '<button type="submit" class="button button-secondary" name="atlas_cache_tool" value="' . esc_attr($action) . '">' . esc_html($actionLabel) . '</button>';
+            echo '</form>';
+        }
+        echo '</div>';
     }
 
     private function renderCacheStatusLegend(): void
@@ -925,6 +1139,31 @@ final class AdminMenu
         echo '<div><h2>' . esc_html($label) . '</h2><p>' . esc_html($description) . '</p></div>';
         echo '<button class="' . esc_attr($class) . '" name="atlas_cache_tool" value="' . esc_attr($value) . '"' . $onclick . '>' . esc_html($label) . '</button>';
         echo '</div>';
+    }
+
+    private function htaccessToolButtons(): void
+    {
+        $installed = $this->htaccessRules->isInstalled();
+        echo '<div class="atlas-cache-tool">';
+        echo '<div><h2>.htaccess browser cache rules</h2><p>Manage the Atlas Cache block in an existing .htaccess file. Apache and LiteSpeed use browser cache rules; on Apache, gzip is added if compression is absent. nginx ignores .htaccess files.</p></div>';
+        echo '<div class="atlas-cache-tool-actions">';
+        echo '<button class="button button-secondary" name="atlas_cache_tool" value="' . ($installed ? 'remove-htaccess-browser-cache' : 'install-htaccess-browser-cache') . '">' . ($installed ? 'Remove' : 'Install') . '</button>';
+        echo '</div></div>';
+    }
+
+    private function advancedCacheToolButtons(): void
+    {
+        $installed = $this->dropInInstaller->isOwnedByAtlas();
+        $cacheEnabled = $this->settings->isEnabled();
+        $action = $installed ? 'disable-dropin' : ($cacheEnabled ? 'install-dropin' : 'enable-cache');
+        $label = $installed ? 'Uninstall' : ($cacheEnabled ? 'Install' : 'Install and enable cache');
+
+        echo '<div class="atlas-cache-tool">';
+        echo '<div><h2>advanced-cache.php</h2><p>WordPress loads this file before starting to serve cached HTML. Atlas Cache never replaces another plugin’s file. Its settings file is written automatically; use Repair if Diagnostics reports it missing or broken. Uninstall also disables cache.</p></div>';
+        echo '<div class="atlas-cache-tool-actions">';
+        echo '<button class="button button-secondary" name="atlas_cache_tool" value="' . esc_attr($action) . '">' . esc_html($label) . '</button>';
+        echo '<button class="button button-secondary" name="atlas_cache_tool" value="rewrite-config">Repair</button>';
+        echo '</div></div>';
     }
 
     private function renderQueueTable(): void

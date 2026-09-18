@@ -69,6 +69,13 @@ final class PageCacheMiddleware
         }
 
         $settings = $this->settings->all();
+        $excludedPostTypes = $settings['excluded_post_types'];
+        if ($excludedPostTypes !== [] && (is_singular($excludedPostTypes)
+            || is_post_type_archive($excludedPostTypes)
+            || (in_array('post', $excludedPostTypes, true) && is_home()))) {
+            $this->debugHeader('BYPASS', 'ExcludedPostType');
+            return;
+        }
         $reason = $this->requestPolicy->bypassReason($settings, $_SERVER, $_COOKIE, false, $this->allowedHosts());
         if ($reason !== null) {
             $this->debugHeader('BYPASS', $reason);
@@ -121,6 +128,7 @@ final class PageCacheMiddleware
                 'generated_at' => gmdate('c', $now),
                 'status' => $this->statusCode(),
                 'content_type' => 'text/html',
+                'post_type' => $this->currentPostType(),
                 'hash' => 'sha256:' . hash('sha256', $html),
                 'cache_key' => $key->debugKey(),
                 'version' => ATLAS_CACHE_VERSION,
@@ -140,6 +148,25 @@ final class PageCacheMiddleware
         }
 
         return $html;
+    }
+
+    private function currentPostType(): string
+    {
+        if (is_home()) {
+            return 'post';
+        }
+
+        if (is_singular()) {
+            $postType = get_post_type(get_queried_object_id());
+            return is_string($postType) ? $postType : '';
+        }
+
+        if (is_post_type_archive()) {
+            $object = get_queried_object();
+            return $object instanceof \WP_Post_Type ? $object->name : '';
+        }
+
+        return '';
     }
 
     /**

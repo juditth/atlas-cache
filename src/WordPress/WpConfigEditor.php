@@ -90,6 +90,52 @@ final class WpConfigEditor
         $this->write($path, $contents);
     }
 
+    /** Explicitly turns off a simple WP_CACHE definition, including one created by another plugin. */
+    public function disableCacheExplicitly(): void
+    {
+        $path = $this->configPath();
+        $originalContents = file_get_contents($path);
+        if (!is_string($originalContents)) {
+            throw new RuntimeException('Cannot read wp-config.php.');
+        }
+
+        $contents = $originalContents;
+        $hadAtlasMarker = strpos($contents, self::START_MARKER) !== false;
+        if ($hadAtlasMarker) {
+            [$contents, $originalLine] = $this->removeAtlasMarker($contents);
+            if (strpos($contents, self::START_MARKER) !== false) {
+                throw new RuntimeException('Atlas Cache WP_CACHE block has an unknown format. Edit wp-config.php manually.');
+            }
+            if ($originalLine !== '') {
+                $contents = $this->insertBeforeBootstrap($contents, $originalLine);
+            }
+        }
+
+        $definitions = preg_match_all('/\bdefine\s*\(\s*([\'\"])WP_CACHE\1/i', $contents);
+        if ($definitions === false || $definitions > 1) {
+            throw new RuntimeException('wp-config.php has multiple WP_CACHE definitions. Edit it manually.');
+        }
+        if ($definitions === 0 && !$hadAtlasMarker) {
+            throw new RuntimeException('Cannot locate a simple WP_CACHE definition in wp-config.php. Edit it manually.');
+        }
+        if ($definitions === 1) {
+            $pattern = '/^([ \t]*define\s*\(\s*([\'\"])WP_CACHE\2\s*,\s*)(true|false|1|0)(\s*\)\s*;[ \t]*(?:\/\/[^\r\n]*)?)$/mi';
+            if (preg_match($pattern, $contents) !== 1) {
+                throw new RuntimeException('wp-config.php has a custom WP_CACHE definition. Edit it manually.');
+            }
+            $contents = (string) preg_replace($pattern, '${1}false${4}', $contents, 1);
+        }
+
+        if ($contents === $originalContents) {
+            return;
+        }
+        if (!is_writable($path)) {
+            throw new RuntimeException('wp-config.php is not writable.');
+        }
+        $this->backup($originalContents);
+        $this->write($path, $contents);
+    }
+
     /**
      * Saves the pre-edit file content so a broken automated edit can be recovered. This is
      * stored in the options table (admin-only, DB-only access) rather than as a sibling file

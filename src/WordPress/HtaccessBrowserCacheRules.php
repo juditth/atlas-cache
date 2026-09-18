@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AtlasCache\WordPress;
 
+use AtlasCache\Config\BrowserCacheGroups;
 use RuntimeException;
 
 final class HtaccessBrowserCacheRules
@@ -18,23 +19,30 @@ final class HtaccessBrowserCacheRules
         $this->path = $path ?? ABSPATH . '.htaccess';
     }
 
-    public function install(): void
+    /** @param array<string, int>|null $days */
+    public function install(?array $days = null, bool $gzipFallback = false): void
     {
         $contents = $this->readWritableContents();
         $contents = $this->removeBlock($contents);
-        $contents = rtrim($contents) . "\n\n" . $this->block() . "\n";
+        $contents = rtrim($contents) . "\n\n" . $this->block($days, $gzipFallback) . "\n";
         $this->write($contents);
     }
 
     public function uninstall(): void
     {
-        if (!is_file($this->path) || !is_writable($this->path)) {
+        if (!is_file($this->path)) {
             return;
         }
 
         $contents = file_get_contents($this->path);
-        if (!is_string($contents) || strpos($contents, self::START_MARKER) === false) {
+        if (!is_string($contents)) {
+            throw new RuntimeException('Cannot read .htaccess: ' . $this->path);
+        }
+        if (strpos($contents, self::START_MARKER) === false) {
             return;
+        }
+        if (!is_writable($this->path)) {
+            throw new RuntimeException('.htaccess is not writable: ' . $this->path);
         }
 
         $this->write(rtrim($this->removeBlock($contents)) . "\n");
@@ -57,6 +65,36 @@ final class HtaccessBrowserCacheRules
         }
 
         return 'Available but not installed: ' . $this->path;
+    }
+
+    /** Whether the existing .htaccess contains Atlas Cache browser cache rules. */
+    public function isInstalled(): bool
+    {
+        if (!is_file($this->path)) {
+            return false;
+        }
+
+        $contents = file_get_contents($this->path);
+
+        return is_string($contents) && strpos($contents, self::START_MARKER) !== false;
+    }
+
+    public function hasGzipFallback(): bool
+    {
+        if (!is_file($this->path)) {
+            return false;
+        }
+
+        $contents = file_get_contents($this->path);
+        if (!is_string($contents)) {
+            return false;
+        }
+
+        $start = strpos($contents, self::START_MARKER);
+        $end = strpos($contents, self::END_MARKER);
+
+        return $start !== false && $end !== false && $end > $start
+            && strpos(substr($contents, $start, $end - $start), '# Atlas Cache gzip fallback') !== false;
     }
 
     private function readWritableContents(): string
@@ -91,36 +129,33 @@ final class HtaccessBrowserCacheRules
         }
     }
 
-    private function block(): string
+    /** @param array<string, int>|null $days */
+    private function block(?array $days, bool $gzipFallback): string
     {
-        return self::START_MARKER . "\n"
-            . "<IfModule mod_expires.c>\n"
-            . "    ExpiresActive On\n"
-            . "    ExpiresByType image/avif \"access plus 1 year\"\n"
-            . "    ExpiresByType image/bmp \"access plus 1 year\"\n"
-            . "    ExpiresByType image/gif \"access plus 1 year\"\n"
-            . "    ExpiresByType image/jpeg \"access plus 1 year\"\n"
-            . "    ExpiresByType image/png \"access plus 1 year\"\n"
-            . "    ExpiresByType image/svg+xml \"access plus 1 year\"\n"
-            . "    ExpiresByType image/webp \"access plus 1 year\"\n"
-            . "    ExpiresByType image/x-icon \"access plus 1 year\"\n"
-            . "    ExpiresByType text/css \"access plus 1 year\"\n"
-            . "    ExpiresByType text/javascript \"access plus 1 year\"\n"
-            . "    ExpiresByType application/javascript \"access plus 1 year\"\n"
-            . "    ExpiresByType application/x-javascript \"access plus 1 year\"\n"
-            . "    ExpiresByType application/font-woff \"access plus 1 year\"\n"
-            . "    ExpiresByType application/font-woff2 \"access plus 1 year\"\n"
-            . "    ExpiresByType application/vnd.ms-fontobject \"access plus 1 year\"\n"
-            . "    ExpiresByType font/otf \"access plus 1 year\"\n"
-            . "    ExpiresByType font/ttf \"access plus 1 year\"\n"
-            . "    ExpiresByType font/woff \"access plus 1 year\"\n"
-            . "    ExpiresByType font/woff2 \"access plus 1 year\"\n"
-            . "</IfModule>\n\n"
-            . "<IfModule mod_headers.c>\n"
-            . "    <FilesMatch \"\\.(avif|bmp|css|eot|gif|ico|jpe?g|js|map|otf|png|svg|ttf|webp|woff2?)$\">\n"
-            . "        Header set Cache-Control \"public, max-age=31536000, immutable\"\n"
-            . "    </FilesMatch>\n"
-            . "</IfModule>\n"
-            . self::END_MARKER;
+        $lines = [self::START_MARKER, '<IfModule mod_headers.c>'];
+        foreach (BrowserCacheGroups::normalize($days) as $key => $duration) {
+            if ($duration === 0) {
+                continue;
+            }
+
+            $extensions = BrowserCacheGroups::all()[$key]['extensions'];
+            $seconds = $duration * 86400;
+            $lines[] = '    <FilesMatch "\\.(' . $extensions . ')$">';
+            $lines[] = '        Header set Cache-Control "public, max-age=' . $seconds . '"';
+            $lines[] = '    </FilesMatch>';
+        }
+        $lines[] = '</IfModule>';
+        if ($gzipFallback) {
+            $lines[] = '';
+            $lines[] = '# Atlas Cache gzip fallback';
+            $lines[] = '<IfModule mod_deflate.c>';
+            $lines[] = '    <IfModule mod_filter.c>';
+            $lines[] = '        AddOutputFilterByType DEFLATE text/html text/plain text/css text/javascript text/xml application/javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font application/x-font-opentype application/x-font-otf application/x-font-truetype application/x-font-ttf application/x-javascript application/xhtml+xml application/xml font/opentype font/otf font/ttf image/svg+xml image/x-icon';
+            $lines[] = '    </IfModule>';
+            $lines[] = '</IfModule>';
+        }
+        $lines[] = self::END_MARKER;
+
+        return implode("\n", $lines);
     }
 }

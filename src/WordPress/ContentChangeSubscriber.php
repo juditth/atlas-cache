@@ -65,6 +65,10 @@ final class ContentChangeSubscriber
             return;
         }
 
+        if (in_array($post->post_type, $this->settings->all()['excluded_post_types'], true)) {
+            return;
+        }
+
         $urls = $this->urlsForPost($postId);
         if ($urls === []) {
             return;
@@ -171,8 +175,12 @@ final class ContentChangeSubscriber
         $created = 0;
         $priorities = $this->priorityResolver->priorities();
         $taxonomyPriorities = $this->priorityResolver->taxonomyPriorities();
+        $excludedPostTypes = $this->settings->all()['excluded_post_types'];
 
         foreach ($urls as $url) {
+            if ($this->priorityResolver->isExcludedUrl($url, $excludedPostTypes)) {
+                continue;
+            }
             $status = $this->queue->enqueueUrlDetailed($url, $this->priorityResolver->priorityForUrl($url, $priorities, $taxonomyPriorities), 'revalidate', $delay);
             if ($status === 'created' || $status === 'requeued') {
                 $created++;

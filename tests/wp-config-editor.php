@@ -35,6 +35,23 @@ $disabled = (string) file_get_contents($path);
 atlas_wp_config_test_assert(strpos($disabled, 'Atlas Cache WP_CACHE') === false, 'Disable must remove the Atlas marker.');
 atlas_wp_config_test_assert(strpos($disabled, "define('WP_CACHE', false);") !== false, 'Disable must restore the original WP_CACHE line.');
 
+file_put_contents($path, $original);
+$editor->enableCache();
+$editor->disableCacheExplicitly();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), "define('WP_CACHE', false);") !== false, 'Explicit disable must turn off an Atlas-managed definition.');
+
+file_put_contents($path, "<?php\ndefine('WP_CACHE', true);\nrequire_once ABSPATH . 'wp-settings.php';\n");
+$editor->disableCacheExplicitly();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), "define('WP_CACHE', false);") !== false, 'Explicit disable must turn off a simple external WP_CACHE definition.');
+
+file_put_contents($path, "<?php\ndefine('WP_CACHE', true);\ndefine('WP_CACHE', true);\nrequire_once ABSPATH . 'wp-settings.php';\n");
+try {
+    $editor->disableCacheExplicitly();
+    throw new RuntimeException('Multiple WP_CACHE definitions must be rejected.');
+} catch (RuntimeException $exception) {
+    atlas_wp_config_test_assert(strpos($exception->getMessage(), 'multiple WP_CACHE definitions') !== false, 'Multiple definitions must be rejected without editing the file.');
+}
+
 unlink($path);
 rmdir($testRoot);
 

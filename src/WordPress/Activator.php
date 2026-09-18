@@ -57,6 +57,7 @@ final class Activator
                 $queue->clearAll();
                 wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
                 wp_clear_scheduled_hook('atlas_cache_process_queue');
+                wp_clear_scheduled_hook('atlas_cache_revalidate_site');
             }
             update_option('atlas_cache_installed_version', ATLAS_CACHE_VERSION, false);
             update_option('atlas_cache_diagnostics', ['last_activation' => time(), 'last_error' => $wpCacheError], false);
@@ -103,6 +104,7 @@ final class Activator
         $queue->clearAll();
         wp_clear_scheduled_hook('atlas_cache_cleanup_logs');
         wp_clear_scheduled_hook('atlas_cache_process_queue');
+        wp_clear_scheduled_hook('atlas_cache_revalidate_site');
         wp_clear_scheduled_hook('puc_cron_check_updates-atlas-cache');
     }
 }

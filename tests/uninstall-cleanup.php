@@ -103,8 +103,11 @@ atlas_uninstall_test_assert(!is_file(WP_CONTENT_DIR . '/advanced-cache.php'), 'O
 atlas_uninstall_test_assert(!is_dir(WP_CONTENT_DIR . '/cache/atlas-cache'), 'Atlas cache directory must be removed.');
 atlas_uninstall_test_assert(strpos((string) file_get_contents(ABSPATH . 'wp-config.php'), 'Atlas Cache WP_CACHE') === false, 'WP_CACHE marker must be removed.');
 atlas_uninstall_test_assert(strpos((string) file_get_contents(ABSPATH . '.htaccess'), 'Atlas Cache Browser Cache') === false, '.htaccess marker must be removed.');
-atlas_uninstall_test_assert(count($GLOBALS['atlas_uninstall_test']['cleared_hooks']) === 3, 'All Atlas cron hooks must be cleared.');
+atlas_uninstall_test_assert(count($GLOBALS['atlas_uninstall_test']['cleared_hooks']) === 4, 'All Atlas cron hooks must be cleared.');
+atlas_uninstall_test_assert(in_array('atlas_cache_revalidate_site', $GLOBALS['atlas_uninstall_test']['cleared_hooks'], true), 'Scheduled site revalidation must be cleared.');
 atlas_uninstall_test_assert(in_array('atlas_cache_settings', $GLOBALS['atlas_uninstall_test']['deleted_options'], true), 'Settings option must be deleted.');
+atlas_uninstall_test_assert(in_array('atlas_cache_scheduled_revalidation_days', $GLOBALS['atlas_uninstall_test']['deleted_options'], true), 'Revalidation schedule state must be deleted.');
+atlas_uninstall_test_assert(in_array('atlas_cache_compression_status', $GLOBALS['atlas_uninstall_test']['deleted_transients'], true), 'Compression diagnostic transient must be deleted.');
 atlas_uninstall_test_assert(in_array('external_updates-atlas-cache', $GLOBALS['atlas_uninstall_test']['deleted_site_options'], true), 'Updater state must be deleted.');
 atlas_uninstall_test_assert(count($wpdb->queries) === 1 && strpos($wpdb->queries[0], 'DROP TABLE IF EXISTS wp_atlas_cache_queue') !== false, 'Queue table must be dropped.');
 
