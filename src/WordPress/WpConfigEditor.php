@@ -24,9 +24,9 @@ final class WpConfigEditor
             throw new RuntimeException('Cannot read wp-config.php.');
         }
 
-        $pattern = '/^[ \t]*define\s*\(\s*([\'"])WP_CACHE\1\s*,\s*(true|false|0|1)\s*\)\s*;\s*$/mi';
+        $pattern = '/^[ \t]*define[ \t]*\([ \t]*([\'"])WP_CACHE\1[ \t]*,[ \t]*(true|false|0|1)[ \t]*\)[ \t]*;[ \t]*(?:(?:\/\/|#)[^\r\n]*)?$/mi';
         $originalBootstrapPosition = $this->bootstrapPosition($originalContents);
-        if (preg_match($pattern, $originalContents, $originalMatches, PREG_OFFSET_CAPTURE) === 1) {
+        if (preg_match($pattern, $this->scannablePhp($originalContents), $originalMatches, PREG_OFFSET_CAPTURE) === 1) {
             $originalValue = strtolower((string) $originalMatches[2][0]);
             $originalLinePosition = (int) $originalMatches[0][1];
             if (($originalValue === 'true' || $originalValue === '1') && ($originalBootstrapPosition === null || $originalLinePosition < $originalBootstrapPosition)) {
@@ -41,8 +41,8 @@ final class WpConfigEditor
         [$contents, $originalFromMarker] = $this->removeAtlasMarker($originalContents);
         $bootstrapPosition = $this->bootstrapPosition($contents);
 
-        if (preg_match($pattern, $contents, $matches, PREG_OFFSET_CAPTURE) === 1) {
-            $line = (string) $matches[0][0];
+        if (preg_match($pattern, $this->scannablePhp($contents), $matches, PREG_OFFSET_CAPTURE) === 1) {
+            $line = substr($contents, (int) $matches[0][1], strlen((string) $matches[0][0]));
             $value = strtolower((string) $matches[2][0]);
             $linePosition = (int) $matches[0][1];
             if (($value === 'true' || $value === '1') && ($bootstrapPosition === null || $linePosition < $bootstrapPosition)) {
@@ -57,7 +57,7 @@ final class WpConfigEditor
             return;
         }
 
-        if (stripos($contents, 'WP_CACHE') !== false) {
+        if ($this->containsCustomWpCacheDefinition($contents)) {
             throw new RuntimeException('wp-config.php contains a custom WP_CACHE definition. Enable it manually so Atlas Cache does not edit an unknown format.');
         }
 
@@ -152,6 +152,76 @@ final class WpConfigEditor
             'content' => base64_encode($originalContents),
             'created_at' => time(),
         ], false);
+    }
+
+    private function containsCustomWpCacheDefinition(string $contents): bool
+    {
+        $tokens = token_get_all($contents);
+        foreach ($tokens as $index => $token) {
+            if (!is_array($token)) {
+                continue;
+            }
+
+            if ($token[0] === T_CONST) {
+                $nameIndex = $this->nextCodeTokenIndex($tokens, $index + 1);
+                if ($nameIndex !== null && is_array($tokens[$nameIndex]) && $tokens[$nameIndex][0] === T_STRING && $tokens[$nameIndex][1] === 'WP_CACHE') {
+                    return true;
+                }
+            }
+
+            if ($token[0] !== T_STRING || strcasecmp($token[1], 'define') !== 0) {
+                continue;
+            }
+
+            $openIndex = $this->nextCodeTokenIndex($tokens, $index + 1);
+            if ($openIndex === null || $tokens[$openIndex] !== '(') {
+                continue;
+            }
+
+            $nameIndex = $this->nextCodeTokenIndex($tokens, $openIndex + 1);
+            if ($nameIndex === null || !is_array($tokens[$nameIndex]) || $tokens[$nameIndex][0] !== T_CONSTANT_ENCAPSED_STRING) {
+                continue;
+            }
+
+            $literal = $tokens[$nameIndex][1];
+            if (strlen($literal) >= 2 && ($literal[0] === "'" || $literal[0] === '"') && $literal[0] === substr($literal, -1) && substr($literal, 1, -1) === 'WP_CACHE') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function scannablePhp(string $contents): string
+    {
+        $scannable = '';
+        foreach (token_get_all($contents) as $token) {
+            $value = is_array($token) ? $token[1] : $token;
+            if (is_array($token) && (
+                in_array($token[0], [T_COMMENT, T_DOC_COMMENT, T_INLINE_HTML, T_ENCAPSED_AND_WHITESPACE], true)
+                || ($token[0] === T_CONSTANT_ENCAPSED_STRING && $value !== "'WP_CACHE'" && $value !== '"WP_CACHE"')
+            )) {
+                $scannable .= (string) preg_replace('/[^\r\n]/', ' ', $value);
+                continue;
+            }
+
+            $scannable .= $value;
+        }
+
+        return $scannable;
+    }
+
+    /** @param array<int, string|array<int, string|int>> $tokens */
+    private function nextCodeTokenIndex(array $tokens, int $start): ?int
+    {
+        for ($index = $start, $count = count($tokens); $index < $count; $index++) {
+            $token = $tokens[$index];
+            if (!is_array($token) || !in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                return $index;
+            }
+        }
+
+        return null;
     }
 
     public function configPath(): string

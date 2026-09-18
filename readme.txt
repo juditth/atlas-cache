@@ -4,7 +4,7 @@ Tags: cache, page cache, html cache, performance, advanced-cache
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 0.1.15
+Stable tag: 0.1.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,11 @@ No. Common WooCommerce cart, checkout, account and session cookies are bypassed 
 No. Atlas Cache is only an HTML page cache.
 
 == Changelog ==
+
+= 0.1.16 =
+
+* Fix false detection of custom WP_CACHE definitions when wp-config.php only mentions WP_CACHE in comments or strings.
+* Accept enabled WP_CACHE definitions with trailing comments without modifying wp-config.php.
 
 = 0.1.15 =
 

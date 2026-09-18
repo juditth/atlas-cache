@@ -44,6 +44,34 @@ file_put_contents($path, "<?php\ndefine('WP_CACHE', true);\nrequire_once ABSPATH
 $editor->disableCacheExplicitly();
 atlas_wp_config_test_assert(strpos((string) file_get_contents($path), "define('WP_CACHE', false);") !== false, 'Explicit disable must turn off a simple external WP_CACHE definition.');
 
+file_put_contents($path, "<?php\ndefine( 'WP_CACHE', true );\nrequire_once ABSPATH . 'wp-settings.php';\n");
+$editor->enableCache();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), "define( 'WP_CACHE', true );") !== false, 'A spaced WP_CACHE definition must be accepted without editing the file.');
+
+file_put_contents($path, "<?php\ndefine( 'WP_CACHE', true ); // Set by a previous cache plugin\nrequire_once ABSPATH . 'wp-settings.php';\n");
+$editor->enableCache();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), 'BEGIN Atlas Cache WP_CACHE') === false, 'An enabled WP_CACHE definition with a trailing comment must be accepted without editing the file.');
+
+file_put_contents($path, "<?php\n// WP_CACHE can be enabled by a cache plugin.\nrequire_once ABSPATH . 'wp-settings.php';\n");
+$editor->enableCache();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), 'BEGIN Atlas Cache WP_CACHE') !== false, 'A WP_CACHE mention in a comment must not block activation.');
+
+file_put_contents($path, "<?php\n/*\ndefine('WP_CACHE', true);\n*/\nrequire_once ABSPATH . 'wp-settings.php';\n");
+$editor->enableCache();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), 'BEGIN Atlas Cache WP_CACHE') !== false, 'A WP_CACHE definition in a block comment must not be treated as active.');
+
+file_put_contents($path, "<?php\n\$example = \"\ndefine('WP_CACHE', true);\n\";\nrequire_once ABSPATH . 'wp-settings.php';\n");
+$editor->enableCache();
+atlas_wp_config_test_assert(strpos((string) file_get_contents($path), 'BEGIN Atlas Cache WP_CACHE') !== false, 'A WP_CACHE definition in a string must not be treated as active.');
+
+file_put_contents($path, "<?php\ndefine('WP_CACHE', getenv('WP_CACHE_ENABLED'));\nrequire_once ABSPATH . 'wp-settings.php';\n");
+try {
+    $editor->enableCache();
+    throw new RuntimeException('A dynamic WP_CACHE definition must be rejected.');
+} catch (RuntimeException $exception) {
+    atlas_wp_config_test_assert(strpos($exception->getMessage(), 'custom WP_CACHE definition') !== false, 'A dynamic WP_CACHE definition must remain protected.');
+}
+
 file_put_contents($path, "<?php\ndefine('WP_CACHE', true);\ndefine('WP_CACHE', true);\nrequire_once ABSPATH . 'wp-settings.php';\n");
 try {
     $editor->disableCacheExplicitly();
