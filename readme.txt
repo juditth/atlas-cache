@@ -4,7 +4,7 @@ Tags: cache, page cache, html cache, performance, advanced-cache
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.0
-Stable tag: 0.1.16
+Stable tag: 0.1.17
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,11 @@ No. Common WooCommerce cart, checkout, account and session cookies are bypassed 
 No. Atlas Cache is only an HTML page cache.
 
 == Changelog ==
+
+= 0.1.17 =
+
+* Show the private Cache-Control value that blocked an Atlas revalidation in the queue error and debug log.
+* Stop retrying revalidation responses blocked by private headers; continue protecting those responses from cache storage.
 
 = 0.1.16 =
 

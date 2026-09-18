@@ -99,10 +99,18 @@ final class PageCacheMiddleware
      */
     private function storeResponse(string $html, array $settings): string
     {
-        $reason = $this->responsePolicy->bypassReason($this->statusCode(), headers_list(), $html);
+        $responseHeaders = headers_list();
+        $reason = $this->responsePolicy->bypassReason($this->statusCode(), $responseHeaders, $html);
         if ($reason !== null) {
+            $detail = '';
+            if ($reason === 'PrivateHeaders') {
+                $detail = $this->privateCacheControlValue($responseHeaders);
+                if ($detail !== '' && $this->requestPolicy->isRefreshRequest($settings, $_SERVER) && !headers_sent()) {
+                    header('X-Atlas-Cache-Blocked-By: ' . $detail);
+                }
+            }
             $this->debugHeader('BYPASS', $reason);
-            $this->maybeLog('bypass', $reason . ' ' . $this->currentUri(), $settings);
+            $this->maybeLog('bypass', $reason . ($detail !== '' ? ' Cache-Control=' . $detail : '') . ' ' . $this->currentUri(), $settings);
             return $html;
         }
 
@@ -269,6 +277,26 @@ final class PageCacheMiddleware
             $header = (string) $header;
             if (strpos(strtolower($header), $needle) === 0) {
                 return trim(substr($header, strlen($needle)));
+            }
+        }
+
+        return '';
+    }
+
+    /** @param list<string> $headers */
+    private function privateCacheControlValue(array $headers): string
+    {
+        foreach ($headers as $header) {
+            $lower = strtolower($header);
+            if (strpos($lower, 'cache-control:') !== 0) {
+                continue;
+            }
+
+            if (strpos($lower, 'private') !== false || strpos($lower, 'no-store') !== false) {
+                $value = trim(substr($header, strlen('cache-control:')));
+                $value = trim((string) preg_replace('/[\x00-\x1f\x7f]+/', ' ', $value));
+
+                return mb_substr($value, 0, 160);
             }
         }
 

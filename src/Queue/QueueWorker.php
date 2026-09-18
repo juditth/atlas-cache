@@ -102,7 +102,15 @@ final class QueueWorker
             }
 
             $error = 'Unexpected response: HTTP ' . $code . ', cache=' . $cacheStatus . ', reason=' . $cacheReason;
-            $this->queue->markFailed($id, $error, (int) $item['attempts'] < 3);
+            if ($cacheReason === 'PrivateHeaders') {
+                $blockedBy = (string) wp_remote_retrieve_header($response, 'x-atlas-cache-blocked-by');
+                if ($blockedBy === '') {
+                    $blockedBy = (string) wp_remote_retrieve_header($response, 'cache-control');
+                }
+                $blockedBy = trim((string) preg_replace('/[\x00-\x1f\x7f]+/', ' ', $blockedBy));
+                $error .= ', cache-control=' . ($blockedBy !== '' ? mb_substr($blockedBy, 0, 160) : 'unavailable');
+            }
+            $this->queue->markFailed($id, $error, (int) $item['attempts'] < 3 && $cacheReason !== 'PrivateHeaders');
             $this->logger->log('revalidate', 'FAILED ' . $url . ' ' . $error);
             $failed++;
         }
