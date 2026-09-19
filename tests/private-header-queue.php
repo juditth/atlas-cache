@@ -21,6 +21,11 @@ function sanitize_key(string $key): string
     return preg_replace('/[^a-z0-9_\-]/', '', strtolower($key)) ?? '';
 }
 
+function wp_unslash($value)
+{
+    return $value;
+}
+
 function current_time(string $type, bool $gmt = false): string
 {
     return gmdate('Y-m-d H:i:s');
@@ -35,6 +40,12 @@ function wp_remote_get(string $url, array $args): array
 {
     if ($args['cookies'] !== [] || $args['headers']['X-Atlas-Cache-Refresh-Token'] === '') {
         throw new RuntimeException('The worker must make an anonymous authenticated refresh request.');
+    }
+    if (array_key_exists('Cache-Control', $args['headers'])) {
+        throw new RuntimeException('The refresh token bypasses Atlas cache; the worker must not send a generic no-cache request header.');
+    }
+    if (array_keys($args['headers']) !== ['X-Atlas-Cache-Refresh-Token']) {
+        throw new RuntimeException('The worker must send only the refresh token header required by Atlas.');
     }
 
     return $GLOBALS['atlas_private_test_response'];
@@ -101,7 +112,20 @@ require_once dirname(__DIR__) . '/src/Queue/QueueRepository.php';
 require_once dirname(__DIR__) . '/src/Cache/CacheKeyGenerator.php';
 require_once dirname(__DIR__) . '/src/Queue/QueueWorker.php';
 require_once dirname(__DIR__) . '/src/Request/ResponsePolicy.php';
+require_once dirname(__DIR__) . '/src/Request/RequestPolicy.php';
 require_once dirname(__DIR__) . '/src/WordPress/PageCacheMiddleware.php';
+
+$refreshToken = str_repeat('a', 48);
+$requestPolicy = new AtlasCache\Request\RequestPolicy();
+if ($requestPolicy->bypassReason(
+    ['enabled' => true, 'refresh_token' => $refreshToken],
+    ['HTTP_HOST' => 'example.test', 'HTTP_X_ATLAS_CACHE_REFRESH_TOKEN' => $refreshToken],
+    [],
+    false,
+    ['example.test']
+) !== null) {
+    throw new RuntimeException('The authenticated refresh token must bypass stored Atlas HTML without a no-cache request header.');
+}
 
 $policy = new AtlasCache\Request\ResponsePolicy();
 if ($policy->bypassReason(200, ['Content-Type: text/html', 'Cache-Control: private, no-store'], '<html></html>') !== 'PrivateHeaders') {

@@ -76,9 +76,7 @@ final class QueueWorker
                 'timeout' => 20,
                 'redirection' => 0,
                 'headers' => [
-                    'X-Atlas-Cache-Refresh' => '1',
                     'X-Atlas-Cache-Refresh-Token' => $token,
-                    'Cache-Control' => 'no-cache',
                 ],
                 'cookies' => [],
             ]);

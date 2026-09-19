@@ -1,15 +1,15 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.17",
-  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.17.zip",
+  "version": "0.1.18",
+  "download_url": "https://github.com/juditth/atlas-cache/archive/refs/tags/0.1.18.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
   "requires_php": "8.0",
-  "last_updated": "2026-09-18 00:00:00",
+  "last_updated": "2026-09-19 00:00:00",
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "0.1.17: Diagnose private Cache-Control revalidation failures and avoid repeated retries."
+    "changelog": "0.1.18: Send only the required refresh token during revalidation so redundant request headers cannot trigger unrelated no-store responses."
   }
 }
