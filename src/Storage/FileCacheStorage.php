@@ -56,8 +56,10 @@ final class FileCacheStorage implements CacheStorageInterface
             return;
         }
 
-        $this->removeChildren($directory);
-        @rmdir($directory);
+        $this->ensurePurgeDirectory($directory);
+        // Child directories contain separate URLs, including below the homepage.
+        $this->removeFile($this->paths->htmlFile($key));
+        $this->removeFile($this->paths->metaFile($key));
     }
 
     /**
@@ -137,20 +139,45 @@ final class FileCacheStorage implements CacheStorageInterface
 
     private function removeChildren(string $directory): void
     {
-        $this->ensureInsideRoot($directory);
+        $this->ensurePurgeDirectory($directory);
 
         $items = new \FilesystemIterator($directory, \FilesystemIterator::SKIP_DOTS);
         foreach ($items as $item) {
             $path = $item->getPathname();
             $this->ensureInsideRoot($path);
 
-            if ($item->isDir()) {
+            if ($item->isDir() && !$item->isLink()) {
                 $this->removeChildren($path);
-                @rmdir($path);
+                if (!@rmdir($path) && is_dir($path)) {
+                    throw new RuntimeException('Nelze odstranit cache adresář.');
+                }
                 continue;
             }
 
-            @unlink($path);
+            $this->removeFile($path);
+        }
+    }
+
+    private function ensurePurgeDirectory(string $directory): void
+    {
+        $this->ensureInsideRoot($directory);
+        $root = realpath($this->paths->root());
+        $resolved = realpath($directory);
+        if ($root === false || $resolved === false || is_link($directory)
+            || strpos($this->normalizePath($resolved), $this->normalizePath($root) . '/') !== 0) {
+            throw new RuntimeException('Cache adresář je mimo povolené úložiště nebo je odkaz.');
+        }
+    }
+
+    private function removeFile(string $path): void
+    {
+        $this->ensureInsideRoot($path);
+        if (!file_exists($path) && !is_link($path)) {
+            return;
+        }
+
+        if (!@unlink($path)) {
+            throw new RuntimeException('Nelze odstranit cache soubor.');
         }
     }
 }

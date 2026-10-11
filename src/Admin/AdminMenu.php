@@ -236,8 +236,8 @@ final class AdminMenu
         $this->notice();
         $tab = isset($_GET['tab']) && sanitize_key((string) $_GET['tab']) === 'browser-cache' ? 'browser-cache' : 'general';
         echo '<nav class="nav-tab-wrapper" aria-label="Settings tabs">';
-        echo '<a class="nav-tab' . ($tab === 'general' ? ' nav-tab-active' : '') . '" href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">General</a>';
-        echo '<a class="nav-tab' . ($tab === 'browser-cache' ? ' nav-tab-active' : '') . '" href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings&tab=browser-cache')) . '">Browser cache</a>';
+        echo '<a class="nav-tab' . ($tab === 'general' ? ' nav-tab-active' : '') . '"' . ($tab === 'general' ? ' aria-current="page"' : '') . ' href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">General</a>';
+        echo '<a class="nav-tab' . ($tab === 'browser-cache' ? ' nav-tab-active' : '') . '"' . ($tab === 'browser-cache' ? ' aria-current="page"' : '') . ' href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings&tab=browser-cache')) . '">Browser cache</a>';
         echo '</nav>';
         if ($tab === 'browser-cache') {
             $this->browserCacheSettings($settings);

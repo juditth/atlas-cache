@@ -65,7 +65,14 @@ final class QueueWorker
             $mode = (string) ($item['mode'] ?? 'revalidate');
 
             if ($mode === 'purge') {
-                $this->purgeUrl($url);
+                try {
+                    $this->purgeUrl($url);
+                } catch (\RuntimeException $exception) {
+                    $this->queue->markFailed($id, $exception->getMessage(), (int) $item['attempts'] < 3);
+                    $this->logger->log('purge', 'FAILED ' . $url . ' ' . $exception->getMessage());
+                    $failed++;
+                    continue;
+                }
                 $this->queue->markDone($id);
                 $this->logger->log('purge', 'DONE ' . $url);
                 $done++;

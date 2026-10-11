@@ -56,6 +56,11 @@ function is_wp_error($response): bool
     return false;
 }
 
+function wp_parse_url(string $url)
+{
+    return parse_url($url);
+}
+
 function wp_remote_retrieve_response_code(array $response): int
 {
     return $response['code'];
@@ -70,6 +75,7 @@ class wpdb
 {
     public string $prefix = 'wp_';
     public array $updates = [];
+    public string $mode = 'revalidate';
     private bool $claimed = false;
 
     public function prepare(string $query, ...$args): string
@@ -87,7 +93,7 @@ class wpdb
         return $this->claimed ? null : [
             'id' => 1,
             'url' => 'https://example.test/',
-            'mode' => 'revalidate',
+            'mode' => $this->mode,
             'attempts' => 0,
         ];
     }
@@ -110,6 +116,8 @@ require_once dirname(__DIR__) . '/src/Storage/CacheStorageInterface.php';
 require_once dirname(__DIR__) . '/src/Debug/Logger.php';
 require_once dirname(__DIR__) . '/src/Queue/QueueRepository.php';
 require_once dirname(__DIR__) . '/src/Cache/CacheKeyGenerator.php';
+require_once dirname(__DIR__) . '/src/Cache/CacheKey.php';
+require_once dirname(__DIR__) . '/src/Storage/PathSanitizer.php';
 require_once dirname(__DIR__) . '/src/Queue/QueueWorker.php';
 require_once dirname(__DIR__) . '/src/Request/ResponsePolicy.php';
 require_once dirname(__DIR__) . '/src/Request/RequestPolicy.php';
@@ -140,10 +148,16 @@ if ($headerMethod->invoke($middleware, ['Cache-Control: no-cache, must-revalidat
 
 $testRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'atlas-private-queue-' . bin2hex(random_bytes(6));
 $logger = new AtlasCache\Debug\Logger(new AtlasCache\Storage\CachePaths($testRoot));
-$keyGenerator = (new ReflectionClass(AtlasCache\Cache\CacheKeyGenerator::class))->newInstanceWithoutConstructor();
+$keyGenerator = new AtlasCache\Cache\CacheKeyGenerator(new AtlasCache\Storage\PathSanitizer());
 $storage = new class implements AtlasCache\Storage\CacheStorageInterface {
+    public bool $failPurge = false;
     public function write(AtlasCache\Cache\CacheKey $key, string $html, array $metadata): void {}
-    public function purge(AtlasCache\Cache\CacheKey $key): void {}
+    public function purge(AtlasCache\Cache\CacheKey $key): void
+    {
+        if ($this->failPurge) {
+            throw new RuntimeException('Deletion failed');
+        }
+    }
     public function purgeAll(): void {}
     public function stats(): array { return ['files' => 0, 'size' => 0]; }
 };
@@ -171,6 +185,22 @@ $worker->run(1);
 $failure = end($database->updates);
 if ($failure['status'] !== 'pending') {
     throw new RuntimeException('Transient responses must retain the normal retry policy.');
+}
+
+foreach ([false, true] as $failPurge) {
+    $database = new wpdb();
+    $database->mode = 'purge';
+    $storage->failPurge = $failPurge;
+    $worker = new AtlasCache\Queue\QueueWorker(new AtlasCache\Queue\QueueRepository($database), new AtlasCache\Config\SettingsRepository(), $logger, $keyGenerator, $storage);
+    $result = $worker->run(1);
+    $update = end($database->updates);
+    if ($failPurge) {
+        if ($result !== ['processed' => 1, 'done' => 0, 'failed' => 1] || $update['status'] !== 'pending' || $update['last_error'] !== 'Deletion failed') {
+            throw new RuntimeException('Failed purge must be reported and retried, never marked done.');
+        }
+    } elseif ($result !== ['processed' => 1, 'done' => 1, 'failed' => 0] || $update['status'] !== 'done') {
+        throw new RuntimeException('Successful purge must be marked done.');
+    }
 }
 
 foreach (glob($testRoot . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . '*.log') ?: [] as $logFile) {
