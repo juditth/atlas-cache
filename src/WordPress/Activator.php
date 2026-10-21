@@ -16,9 +16,9 @@ final class Activator
 {
     public static function activate(): void
     {
-        if (PHP_VERSION_ID < 80000) {
+        if (PHP_VERSION_ID < 80200) {
             deactivate_plugins(plugin_basename(ATLAS_CACHE_FILE));
-            wp_die(esc_html__('Atlas Cache vyžaduje PHP 8.0 nebo novější.', 'atlas-cache'));
+            wp_die(esc_html__('Atlas Cache vyžaduje PHP 8.2 nebo novější.', 'atlas-cache'));
         }
 
         global $wp_version;

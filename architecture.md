@@ -6,7 +6,7 @@ Plugin nedělá CSS optimalizace, JS optimalizace, image optimalizace, CDN, obje
 
 ## Cílové prostředí
 
-- PHP: 8.0+
+- PHP: 8.2+
 - WordPress: 6.0+
 - Cache storage: `wp-content/cache/atlas-cache/`
 - Primární runtime: `advanced-cache.php` drop-in

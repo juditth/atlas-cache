@@ -5,7 +5,7 @@
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
-  "requires_php": "8.0",
+  "requires_php": "8.2",
   "last_updated": "2026-09-19 00:00:00",
   "author": "Atlas Cache",
   "sections": {

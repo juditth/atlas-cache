@@ -3,7 +3,7 @@ Contributors: jitka88
 Tags: cache, page cache, html cache, performance, advanced-cache
 Requires at least: 6.0
 Tested up to: 6.6
-Requires PHP: 8.0
+Requires PHP: 8.2
 Stable tag: 0.1.18
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html

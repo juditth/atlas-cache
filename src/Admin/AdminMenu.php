@@ -74,6 +74,10 @@ final class AdminMenu
 
         // WordPress requires the parent slug to be registered first; display Tools before Diagnostics.
         global $submenu;
+        // WordPress does not create these submenu entries without manage_options.
+        if (!is_array($submenu['atlas-cache-tools'] ?? null) || count($submenu['atlas-cache-tools']) < 2) {
+            return;
+        }
         $toolsItem = array_shift($submenu['atlas-cache-tools']);
         array_splice($submenu['atlas-cache-tools'], -1, 0, [$toolsItem]);
     }

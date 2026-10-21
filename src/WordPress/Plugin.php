@@ -321,9 +321,12 @@ final class Plugin
      */
     public function pluginActionLinks(array $links): array
     {
+        if (!current_user_can('manage_options')) {
+            return $links;
+        }
         array_unshift(
             $links,
-            '<a href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">' . esc_html__('Settings', 'atlas-cache') . '</a>'
+            '<a href="' . esc_url(admin_url('admin.php?page=atlas-cache-settings')) . '">' . esc_html__('Settings') . '</a>'
         );
 
         return $links;
