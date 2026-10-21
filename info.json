@@ -1,15 +1,15 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.18",
-  "download_url": "https://vyladeny-web.cz/plugins/atlas-cache/atlas-cache-0.1.18.zip",
+  "version": "0.1.19",
+  "download_url": "https://vyladeny-web.cz/plugins/atlas-cache/atlas-cache-0.1.19.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
   "requires_php": "8.2",
-  "last_updated": "2026-09-19 00:00:00",
+  "last_updated": "2026-10-21 00:00:00",
   "author": "Atlas Cache",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "0.1.18: Send only the required refresh token during revalidation so redundant request headers cannot trigger unrelated no-store responses."
+    "changelog": "0.1.19: Fix a fatal admin-menu error for users without manage_options; preserve administrator menu order and access restrictions. 0.1.18: Send only the required refresh token during revalidation so redundant request headers cannot trigger unrelated no-store responses."
   }
 }
