@@ -52,7 +52,7 @@ final class PluginFactory
             $logger,
             new SystemClock()
         );
-        $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger, $priorityResolver, $htaccessRules, $sitemapUrlCollector, $wpConfigEditor, $compressionProbe);
+        $adminMenu = new AdminMenu($settings, $storage, $runtimeConfigWriter, $dropInInstaller, $queue, $worker, $logger, $priorityResolver, $htaccessRules, $sitemapUrlCollector, $wpConfigEditor, $compressionProbe, $cacheKeyGenerator);
         $updater = new SelfHostedUpdater(ATLAS_CACHE_FILE, ATLAS_CACHE_VERSION, (string) ATLAS_CACHE_UPDATE_INFO_URL);
 
         return new Plugin($settings, $middleware, $adminMenu, $runtimeConfigWriter, $dropInInstaller, $htaccessRules, $wpConfigEditor, $logger, $queue, $worker, $contentChangeSubscriber, $sitemapUrlCollector, $priorityResolver, $updater, $compressionProbe);

@@ -4,7 +4,7 @@ Tags: cache, page cache, html cache, performance, advanced-cache
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 8.2
-Stable tag: 0.1.20
+Stable tag: 0.1.21
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,8 @@ Main features:
 * File cache stored in `wp-content/cache/atlas-cache/`.
 * Separate admin pages for settings, cache rules, queue, log, tools and diagnostics.
 * Purge and revalidate actions for pages and the whole site.
+* Purge page/site deletes cache immediately, then queues a rebuild (site rebuild uses sitemap URLs). With cache disabled, Purge site only deletes files.
+* Revalidate page/site queues a refresh and keeps existing HTML available until the new version replaces it.
 * Background queue with debounce after content changes.
 * Configurable automatic site revalidation every 1–365 days through WP-Cron (seven days by default).
 * Admin bar shortcuts for purge and revalidate actions.
@@ -63,6 +65,12 @@ No. Common WooCommerce cart, checkout, account and session cookies are bypassed 
 No. Atlas Cache is only an HTML page cache.
 
 == Changelog ==
+
+= 0.1.21 =
+
+* Purge page immediately deletes page cache and queues a rebuild.
+* Rename Clear cache files to Purge site; immediately clear site cache and queue sitemap URLs for rebuilding.
+* Keep existing HTML available during revalidation and report page rebuild queue failures.
 
 = 0.1.20 =
 

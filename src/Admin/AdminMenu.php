@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AtlasCache\Admin;
 
+use AtlasCache\Cache\CacheKeyGenerator;
 use AtlasCache\Config\RuntimeConfigWriter;
 use AtlasCache\Config\BrowserCacheGroups;
 use AtlasCache\Config\SettingsRepository;
@@ -33,6 +34,7 @@ final class AdminMenu
     private CompressionProbe $compressionProbe;
     private SitemapUrlCollector $sitemapUrlCollector;
     private WpConfigEditor $wpConfigEditor;
+    private CacheKeyGenerator $cacheKeyGenerator;
 
     public function __construct(
         SettingsRepository $settings,
@@ -46,7 +48,8 @@ final class AdminMenu
         HtaccessBrowserCacheRules $htaccessRules,
         SitemapUrlCollector $sitemapUrlCollector,
         WpConfigEditor $wpConfigEditor,
-        CompressionProbe $compressionProbe
+        CompressionProbe $compressionProbe,
+        CacheKeyGenerator $cacheKeyGenerator
     ) {
         $this->settings = $settings;
         $this->storage = $storage;
@@ -58,6 +61,7 @@ final class AdminMenu
         $this->priorityResolver = $priorityResolver;
         $this->htaccessRules = $htaccessRules;
         $this->compressionProbe = $compressionProbe;
+        $this->cacheKeyGenerator = $cacheKeyGenerator;
         $this->sitemapUrlCollector = $sitemapUrlCollector;
         $this->wpConfigEditor = $wpConfigEditor;
     }
@@ -136,10 +140,10 @@ final class AdminMenu
         $adminBar->add_node([
             'id' => 'atlas-cache-purge-all',
             'parent' => 'atlas-cache',
-            'title' => 'Clear cache files',
+            'title' => 'Purge site',
             'href' => $this->toolbarActionUrl('purge-all', '', $this->currentRequestUrl()),
             'meta' => [
-                'onclick' => 'return confirm("Clear all Atlas Cache HTML files now? New cache files can be created again if Enable cache is on.");',
+                'onclick' => 'return confirm("Purge all site cache now and queue a rebuild if cache is enabled?");',
             ],
         ]);
         $adminBar->add_node([
@@ -176,8 +180,11 @@ final class AdminMenu
         }
 
         if ($url !== '' && $tool === 'purge-page' && $this->settings->isEnabled()) {
-            $this->queue->enqueueUrl($url, 1, 'purge');
-            $this->logger->log('purge', 'Queued page purge: ' . $url);
+            try {
+                $this->purgePage($url);
+            } catch (RuntimeException $exception) {
+                wp_die(esc_html('Page purge failed: ' . $exception->getMessage()));
+            }
         }
 
         if ($tool === 'revalidate-site') {
@@ -185,8 +192,11 @@ final class AdminMenu
         }
 
         if ($tool === 'purge-all') {
-            $this->storage->purgeAll();
-            $this->logger->log('purge', 'Toolbar clear cache files');
+            try {
+                $this->purgeSite();
+            } catch (RuntimeException $exception) {
+                wp_die(esc_html('Site purge failed: ' . $exception->getMessage()));
+            }
         }
 
         $redirect = isset($_GET['atlas_cache_redirect']) ? esc_url_raw((string) wp_unslash($_GET['atlas_cache_redirect'])) : '';
@@ -366,8 +376,8 @@ final class AdminMenu
         $this->renderStatusCards();
         echo '<form method="post" class="atlas-cache-tools">';
         wp_nonce_field('atlas_cache_tools');
-        $this->toolButton('queue-revalidate-all', 'Revalidate cache of site', 'Queues URLs found in the sitemap for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
-        $this->toolButton('purge-all', 'Clear cache files', 'Immediately deletes all Atlas Cache HTML files without using the queue. If Enable cache is on, new cache files can be created again by future public visits and revalidation jobs.', 'primary', 'Clear all Atlas Cache HTML files now? New cache files can be created again if Enable cache is on.');
+        $this->toolButton('queue-revalidate-all', 'Revalidate site', 'Queues URLs found in the sitemap for background revalidation. Existing cache remains available until the worker stores the new version.', 'primary');
+        $this->toolButton('purge-all', 'Purge site', 'Immediately deletes all site cache files, then queues sitemap URLs for rebuilding. When cache is disabled, files are only deleted.', 'primary', 'Purge all site cache now and queue a rebuild if cache is enabled?');
         $this->toolButton('run-worker', 'Run worker now', 'Processes pending queue items immediately, using the configured URLs-per-run limit. Revalidate jobs use an internal request.', 'secondary');
         $this->htaccessToolButtons();
         $this->advancedCacheToolButtons();
@@ -551,9 +561,7 @@ final class AdminMenu
             }
 
             if ($tool === 'purge-all') {
-                $this->storage->purgeAll();
-                $this->logger->log('purge', 'Manual clear cache files');
-                update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => 'Cache files were cleared immediately. No queue item was created. If Enable cache is on, new cache files can be created again.'], false);
+                $this->purgeSite();
                 return;
             }
 
@@ -629,17 +637,39 @@ final class AdminMenu
         return $this->sitemapUrlCollector->collect();
     }
 
-    private function queueSitemapRevalidation(string $source): void
+    private function purgePage(string $url): void
+    {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            throw new RuntimeException('Invalid page URL.');
+        }
+        $key = $this->cacheKeyGenerator->generate((string) $parts['host'], (string) ($parts['path'] ?? '/'), 'default', 'public');
+        $this->storage->purge($key);
+        $status = $this->queue->enqueueUrlDetailed($url, 1, 'revalidate');
+        if (!in_array($status, ['created', 'requeued', 'updated'], true)) {
+            throw new RuntimeException('Page cache was deleted, but its rebuild could not be queued.');
+        }
+        $this->logger->log('purge', 'Page cache deleted immediately; rebuild queued: ' . $url);
+    }
+
+    private function purgeSite(): void
+    {
+        $this->storage->purgeAll();
+        $this->logger->log('purge', 'Site cache deleted immediately');
+        $this->queueSitemapRevalidation('Site purge rebuild', 'Site cache was deleted immediately. ');
+    }
+
+    private function queueSitemapRevalidation(string $source, string $prefix = ''): void
     {
         if (!$this->settings->isEnabled()) {
-            $message = 'Cache is disabled. No revalidation was queued.';
+            $message = $prefix . 'Cache is disabled. No revalidation was queued.';
             update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_tool_message' => $message], false);
             return;
         }
 
         $urls = $this->collectRefreshUrls();
         $result = $this->enqueueRevalidationUrlsWithPriorities($urls);
-        $message = 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
+        $message = $prefix . 'Sitemap revalidate queued: ' . $this->formatQueueResult($result);
         $this->logger->log('revalidate', $source . ': ' . $message);
         update_option('atlas_cache_diagnostics', ['last_error' => '', 'last_revalidate_queued' => time(), 'last_revalidate_queued_result' => $result, 'last_tool_message' => $message], false);
     }
@@ -1181,7 +1211,7 @@ final class AdminMenu
             }
 
             echo '<p><strong>No queue jobs found.</strong></p>';
-            echo '<p class="description">This is expected after <strong>Clear cache files</strong>, because that action deletes stored HTML files immediately and does not create background jobs. Use <strong>Revalidate cache of site</strong> when you want Atlas Cache to create queue jobs from sitemap URLs.</p>';
+            echo '<p class="description">Use <strong>Revalidate site</strong> to queue sitemap URLs while keeping existing cache available. <strong>Purge site</strong> deletes cache immediately and queues a rebuild when cache is enabled.</p>';
             return;
         }
 

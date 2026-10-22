@@ -1,16 +1,16 @@
 {
   "name": "Atlas Cache",
-  "version": "0.1.20",
-  "download_url": "https://vyladeny-web.cz/plugins/atlas-cache/atlas-cache-0.1.20.zip",
+  "version": "0.1.21",
+  "download_url": "https://vyladeny-web.cz/plugins/atlas-cache/atlas-cache-0.1.21.zip",
   "homepage": "https://vyladeny-web.cz/plugins/atlas-cache/",
   "requires": "6.0",
   "tested": "6.6",
   "requires_php": "8.2",
-  "last_updated": "2026-10-21",
+  "last_updated": "2026-10-22",
   "author": "Jitka Klingenbergová",
   "author_homepage": "https://vyladeny-web.cz/atlas-plugins/",
   "sections": {
     "description": "Simple and safe HTML page cache.",
-    "changelog": "<h4>0.1.20</h4><ul><li>Correct author details in update metadata and declare the translation directory.</li><li>Retain the admin-menu permission fix from 0.1.19.</li></ul>0.1.19: Fix a fatal admin-menu error for users without manage_options; preserve administrator menu order and access restrictions. 0.1.18: Send only the required refresh token during revalidation so redundant request headers cannot trigger unrelated no-store responses."
+    "changelog": "<h4>0.1.21</h4><ul><li>Purge page immediately deletes cache and queues a rebuild.</li><li>Rename Clear cache files to Purge site and queue site rebuilding after immediate deletion.</li><li>Keep existing HTML available during revalidation.</li></ul><h4>0.1.20</h4><ul><li>Correct author details in update metadata and declare the translation directory.</li><li>Retain the admin-menu permission fix from 0.1.19.</li></ul>0.1.19: Fix a fatal admin-menu error for users without manage_options; preserve administrator menu order and access restrictions. 0.1.18: Send only the required refresh token during revalidation so redundant request headers cannot trigger unrelated no-store responses."
   }
 }

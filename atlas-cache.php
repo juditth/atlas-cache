@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Atlas Cache
  * Description: Jednoduchá a bezpečná HTML page cache přes advanced-cache.php drop-in.
- * Version:     0.1.20
+ * Version:     0.1.21
  * Author:      Jitka Klingenbergová
  * Author URI:  https://vyladeny-web.cz/atlas-plugins/
  * License:     GPLv2 or later
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('ATLAS_CACHE_VERSION', '0.1.20');
+define('ATLAS_CACHE_VERSION', '0.1.21');
 define('ATLAS_CACHE_FILE', __FILE__);
 define('ATLAS_CACHE_DIR', plugin_dir_path(__FILE__));
 define('ATLAS_CACHE_URL', plugin_dir_url(__FILE__));
